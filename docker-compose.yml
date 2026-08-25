@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  demo-service:
+    build: ./demo-service
+    ports:
+      - "9000:9000"
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SENTINELX_REDIS_URL: "redis://redis:6379/0"
+      SENTINELX_ORIGIN_BASE_URL: "http://demo-service:9000"
+      SENTINELX_ENVIRONMENT: "docker-compose"
+    depends_on:
+      redis:
+        condition: service_healthy
+      demo-service:
+        condition: service_started
