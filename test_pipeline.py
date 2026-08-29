@@ -14,7 +14,7 @@ import random
 import string
 import time
 import httpx
-from datetime import datetime
+from datetime import datetime, timezone
 
 GATEWAY_URL = "http://127.0.0.1:8080"
 ORIGIN_URL  = "http://127.0.0.1:9000"
@@ -30,7 +30,7 @@ def _id(base: str) -> str:
 async def test_pipeline():
     print("=" * 55)
     print("  SentinelX — End-to-End Pipeline Test Suite")
-    print(f"  Run-ID: {_RUN}  ·  {datetime.utcnow().isoformat()}Z")
+    print(f"  Run-ID: {_RUN}  ·  {datetime.now(timezone.utc).isoformat()}Z")
     print("=" * 55)
 
     async with httpx.AsyncClient(timeout=10.0) as client:

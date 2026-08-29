@@ -17,6 +17,7 @@ from app.decision import decide
 from app.state_store import get_store
 from app.proxy import forward
 from app.utils.logger import get_logger, log_decision
+from app.incidents import IncidentManager
 
 router = APIRouter()
 logger = get_logger("sentinelx.gateway")
@@ -63,6 +64,20 @@ async def gateway_proxy(service: str, path: str, request: Request):
     await store.set_risk_state(ctx.identity_id, decision.model_dump(mode="json"))
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+
+    # Create incident if risk is high
+    incident_manager = IncidentManager(store)
+    if incident_manager.should_create_incident(decision.risk_score, decision.tier, decision.rule_triggered):
+        await incident_manager.create_incident(
+            identity_id=ctx.identity_id,
+            endpoint=ctx.endpoint,
+            risk_score=decision.risk_score,
+            ml_score=decision.ml_score,
+            rule_score=decision.rule_score,
+            reasons=decision.reasons,
+            tier=decision.tier,
+            action=decision.action
+        )
 
     if decision.tier != "allow":
         alert = decision.model_dump(mode="json")

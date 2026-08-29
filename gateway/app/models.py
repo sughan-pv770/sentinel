@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class RequestContext(BaseModel):
@@ -13,7 +13,7 @@ class RequestContext(BaseModel):
     device: str
     token_age_seconds: float
     payload_size: int
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class FeatureVector(BaseModel):
@@ -42,7 +42,7 @@ class RiskDecision(BaseModel):
     rule_triggered: bool
     ml_score: float
     rule_score: float
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class PolicyUpdate(BaseModel):

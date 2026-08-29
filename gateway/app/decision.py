@@ -9,6 +9,13 @@ from app.config import TIER_ACTION
 from app.ml_engine import get_ml_engine
 from app.rules import evaluate_rules
 from app.state_store import BaseStore
+from app.intelligence import (
+    explain_risk,
+    calculate_identity_risk,
+    calculate_endpoint_risk,
+    handle_cold_start,
+    get_behavioral_context
+)
 
 # How much weight the ML anomaly score carries vs the rule score when no
 # hard trigger fired. When a hard trigger DOES fire, the rule layer wins
@@ -31,6 +38,10 @@ async def decide(ctx: RequestContext, fv: FeatureVector, store: BaseStore) -> Ri
     policy = await store.get_policy()
     thresholds = policy.get("thresholds", {"allow": 30, "step_up": 60, "restrict": 85})
 
+    # Get behavioral profile and recent decisions
+    profile = await store.get_profile(ctx.identity_id)
+    recent_decisions = await store.get_recent_decisions(ctx.identity_id, limit=10)
+
     rule_score, hard_trigger, reasons = await evaluate_rules(ctx, fv, store)
     ml_score = get_ml_engine().score(fv)
 
@@ -43,13 +54,27 @@ async def decide(ctx: RequestContext, fv: FeatureVector, store: BaseStore) -> Ri
     tier = tier_for_score(final_score, thresholds)
     action = TIER_ACTION[tier]
 
+    # Generate enhanced explanations using intelligence layer
     if not reasons and ml_score >= 45:
         from app.models import Reason
         reasons.append(Reason(code="anomalous_behaviour_pattern",
                                message=f"Behavioural pattern deviates from this identity's baseline "
                                        f"(ML anomaly score {ml_score:.0f}/100)"))
 
-    return RiskDecision(
+    # Add detailed risk explanations
+    explanations = explain_risk(ctx, fv, ml_score, rule_score, reasons, profile)
+
+    # Calculate identity and endpoint risk
+    identity_risk_score, identity_risk_level = calculate_identity_risk(profile, recent_decisions)
+    endpoint_risk_score, endpoint_sensitivity = calculate_endpoint_risk(ctx.endpoint)
+
+    # Handle cold start cases
+    cold_start_info = handle_cold_start(ctx, profile)
+
+    # Get behavioral context
+    behavioral_context = get_behavioral_context(ctx, profile)
+
+    decision = RiskDecision(
         identity_id=ctx.identity_id,
         session_id=ctx.session_id,
         endpoint=ctx.endpoint,
@@ -61,3 +86,15 @@ async def decide(ctx: RequestContext, fv: FeatureVector, store: BaseStore) -> Ri
         ml_score=ml_score,
         rule_score=rule_score,
     )
+
+    # Record decision for future analysis
+    await store.record_decision(ctx.identity_id, {
+        "risk_score": final_score,
+        "tier": tier,
+        "ml_score": ml_score,
+        "rule_score": rule_score,
+        "timestamp": ctx.timestamp.isoformat(),
+        "endpoint": ctx.endpoint
+    })
+
+    return decision

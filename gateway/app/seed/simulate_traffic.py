@@ -12,7 +12,7 @@ Scenarios map directly to the pitch script in §11 of the master doc:
 from __future__ import annotations
 import random
 import string
-from datetime import datetime
+from datetime import datetime, timezone
 from app.models import RequestContext
 
 NORMAL_ENDPOINTS = ["profile", "orders"]
@@ -29,7 +29,7 @@ def _session_id(identity_id: str) -> str:
 
 
 def build_scenario(identity_id: str, scenario: str) -> RequestContext:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     session_id = _session_id(identity_id)
 
     if scenario == "normal":
@@ -114,5 +114,6 @@ async def prime_frequency_spike(store, identity_id: str, ctx_builder=build_scena
     frequency_spike scenario score high for a real reason, not a hardcoded one."""
     import time
     now = time.time()
+    current_hour = datetime.now(timezone.utc).hour
     for _ in range(n):
-        await store.record_request(identity_id, "/orders", "IN-TN", "chrome-macos", datetime.utcnow().hour, now)
+        await store.record_request(identity_id, "/orders", "IN-TN", "chrome-macos", current_hour, now)

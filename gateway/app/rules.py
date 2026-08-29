@@ -31,7 +31,7 @@ async def evaluate_rules(ctx: RequestContext, fv: FeatureVector, store: BaseStor
         hard_trigger = True
 
     # 3. Privilege escalation attempt: never-seen admin/payments endpoint
-    is_sensitive = ctx.endpoint.startswith(ADMIN_PREFIXES)
+    is_sensitive = any(ctx.endpoint.startswith(prefix) for prefix in ADMIN_PREFIXES)
     if is_sensitive and fv.endpoint_novelty:
         reasons.append(Reason(code="privilege_escalation_attempt",
                                message=f"First-ever access to sensitive endpoint '{ctx.endpoint}' from this identity"))

@@ -37,6 +37,14 @@ class BaseStore:
     async def get_policy(self) -> dict: ...
     async def set_policy(self, policy: dict): ...
     async def stats(self) -> dict: ...
+    async def get_recent_decisions(self, identity_id: str, limit: int = 10) -> list: ...
+    async def record_decision(self, identity_id: str, decision: dict): ...
+    async def add_incident(self, incident: dict): ...
+    async def get_incident(self, incident_id: str) -> dict: ...
+    async def get_incidents(self, limit: int = 50, severity: str = None) -> list: ...
+    async def update_incident(self, incident: dict): ...
+    async def get_incidents_by_identity(self, identity_id: str, limit: int = 20) -> list: ...
+    async def get_incident_stats(self) -> dict: ...
 
 
 class InMemoryStore(BaseStore):
@@ -48,6 +56,9 @@ class InMemoryStore(BaseStore):
         self._alerts: deque = deque(maxlen=MAX_ALERTS)
         self._revoked: set[str] = set()
         self._policy: dict = json.loads(json.dumps(DEFAULT_POLICY))
+        self._decisions: dict[str, deque] = defaultdict(lambda: deque(maxlen=50))
+        self._incidents: deque = deque(maxlen=200)
+        self._incidents_by_id: dict[str, dict] = {}
         self._lock = asyncio.Lock()
 
     async def get_profile(self, identity_id: str) -> dict:
@@ -105,12 +116,57 @@ class InMemoryStore(BaseStore):
             "revoked_sessions": len(self._revoked),
         }
 
+    async def get_recent_decisions(self, identity_id: str, limit: int = 10) -> list:
+        decisions = list(self._decisions[identity_id])
+        return decisions[:limit]
+
+    async def record_decision(self, identity_id: str, decision: dict):
+        self._decisions[identity_id].appendleft(decision)
+
+    async def add_incident(self, incident: dict):
+        self._incidents.appendleft(incident)
+        self._incidents_by_id[incident["incident_id"]] = incident
+
+    async def get_incident(self, incident_id: str) -> dict:
+        return self._incidents_by_id.get(incident_id)
+
+    async def get_incidents(self, limit: int = 50, severity: str = None) -> list:
+        incidents = list(self._incidents)[:limit]
+        if severity:
+            incidents = [i for i in incidents if i.get("severity") == severity]
+        return incidents
+
+    async def update_incident(self, incident: dict):
+        self._incidents_by_id[incident["incident_id"]] = incident
+        # Update in deque as well
+        for i, inc in enumerate(self._incidents):
+            if inc["incident_id"] == incident["incident_id"]:
+                self._incidents[i] = incident
+                break
+
+    async def get_incidents_by_identity(self, identity_id: str, limit: int = 20) -> list:
+        incidents = [i for i in self._incidents if i.get("identity_id") == identity_id]
+        return incidents[:limit]
+
+    async def get_incident_stats(self) -> dict:
+        total = len(self._incidents)
+        open_count = sum(1 for i in self._incidents if i.get("status") == "OPEN")
+        critical = sum(1 for i in self._incidents if i.get("severity") == "CRITICAL")
+        high = sum(1 for i in self._incidents if i.get("severity") == "HIGH")
+        return {
+            "total_incidents": total,
+            "open_incidents": open_count,
+            "critical_incidents": critical,
+            "high_incidents": high
+        }
+
 
 class RedisStore(BaseStore):
     def __init__(self, url: str):
         import redis.asyncio as aioredis
         self.r = aioredis.from_url(url, decode_responses=True)
         self._policy_key = "sentinelx:policy"
+        self._max_decisions = 50
 
     def _pkey(self, identity_id: str) -> str:
         return f"sentinelx:profile:{identity_id}"
@@ -167,6 +223,56 @@ class RedisStore(BaseStore):
         n_revoked = await self.r.scard("sentinelx:revoked")
         n_alerts = await self.r.llen("sentinelx:alerts")
         return {"backend": "redis", "revoked_sessions": n_revoked, "alerts_buffered": n_alerts}
+
+    async def get_recent_decisions(self, identity_id: str, limit: int = 10) -> list:
+        key = f"sentinelx:decisions:{identity_id}"
+        raw = await self.r.lrange(key, 0, limit - 1)
+        return [json.loads(x) for x in raw]
+
+    async def record_decision(self, identity_id: str, decision: dict):
+        key = f"sentinelx:decisions:{identity_id}"
+        await self.r.lpush(key, json.dumps(decision))
+        await self.r.ltrim(key, 0, self._max_decisions - 1)
+        await self.r.expire(key, 60 * 60 * 24)  # 24 hour TTL
+
+    async def add_incident(self, incident: dict):
+        await self.r.lpush("sentinelx:incidents", json.dumps(incident))
+        await self.r.ltrim("sentinelx:incidents", 0, 199)
+        await self.r.set(f"sentinelx:incident:{incident['incident_id']}", json.dumps(incident), ex=60*60*24*7)
+
+    async def get_incident(self, incident_id: str) -> dict:
+        raw = await self.r.get(f"sentinelx:incident:{incident_id}")
+        return json.loads(raw) if raw else None
+
+    async def get_incidents(self, limit: int = 50, severity: str = None) -> list:
+        raw = await self.r.lrange("sentinelx:incidents", 0, limit - 1)
+        incidents = [json.loads(x) for x in raw]
+        if severity:
+            incidents = [i for i in incidents if i.get("severity") == severity]
+        return incidents
+
+    async def update_incident(self, incident: dict):
+        await self.r.set(f"sentinelx:incident:{incident['incident_id']}", json.dumps(incident), ex=60*60*24*7)
+
+    async def get_incidents_by_identity(self, identity_id: str, limit: int = 20) -> list:
+        raw = await self.r.lrange("sentinelx:incidents", 0, 199)
+        all_incidents = [json.loads(x) for x in raw]
+        filtered = [i for i in all_incidents if i.get("identity_id") == identity_id]
+        return filtered[:limit]
+
+    async def get_incident_stats(self) -> dict:
+        raw = await self.r.lrange("sentinelx:incidents", 0, 199)
+        incidents = [json.loads(x) for x in raw]
+        total = len(incidents)
+        open_count = sum(1 for i in incidents if i.get("status") == "OPEN")
+        critical = sum(1 for i in incidents if i.get("severity") == "CRITICAL")
+        high = sum(1 for i in incidents if i.get("severity") == "HIGH")
+        return {
+            "total_incidents": total,
+            "open_incidents": open_count,
+            "critical_incidents": critical,
+            "high_incidents": high
+        }
 
 
 _store_instance: Optional[BaseStore] = None

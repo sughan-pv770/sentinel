@@ -6,14 +6,14 @@ user-facing resource, an admin-only resource, and a payments-ish resource,
 so the demo has something meaningful to protect.
 """
 from fastapi import FastAPI, Request
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 
 app = FastAPI(title="Origin Demo Service")
 
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict
 
@@ -129,7 +129,7 @@ def delete_user(identity_id: str, current_user: dict = Depends(get_current_user_
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "origin-demo-pg", "time": datetime.utcnow().isoformat()}
+    return {"status": "ok", "service": "origin-demo-pg", "time": datetime.now(timezone.utc).isoformat()}
 
 @app.post("/login")
 def login(request: Request):

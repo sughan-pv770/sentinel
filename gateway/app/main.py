@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import gateway, sentinelx
+from app.routers import incidents_router
+from app.routers import telemetry_router
 from app.ml_engine import get_ml_engine
 from app.utils.logger import get_logger
 
@@ -27,6 +29,8 @@ app.add_middleware(
 
 app.include_router(gateway.router)
 app.include_router(sentinelx.router)
+app.include_router(incidents_router.router)
+app.include_router(telemetry_router.router)
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
