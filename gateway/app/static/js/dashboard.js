@@ -44,10 +44,7 @@ $$(".tab-btn").forEach(btn => {
 /* ═════ USERS API ═════ */
 async function loadUsers() {
   try {
-    // Use the simulate endpoint's underlying origin directly to avoid ML scoring on user-list fetch
-    const res = await fetch(`${API}/gateway/origin/users`, {
-      headers: { "x-identity-id": "u_admin" }
-    });
+    const res = await fetch(`${API}/sentinelx/users`);
     if (!res.ok) throw new Error("Backend not available (status " + res.status + ")");
     const data = await res.json();
     if (!data || !data.users) throw new Error("Invalid user data");
@@ -107,9 +104,9 @@ if (submitAddUser) {
     if (!payload.identity_id || !payload.name) return showToast("Identity ID and Name required", true);
 
     try {
-      const res = await fetch(`${API}/gateway/origin/admin/add_user`, {
+      const res = await fetch(`${API}/sentinelx/users`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-identity-id": "u_admin" },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       if (!res.ok) {
@@ -122,7 +119,10 @@ if (submitAddUser) {
       if (form) form.style.display = "none";
       if ($("#new-uid")) $("#new-uid").value = "";
       if ($("#new-name")) $("#new-name").value = "";
+      if ($("#new-tag")) $("#new-tag").value = "";
+      currentIdentity = payload.identity_id;
       await loadUsers();
+      await pollRisk();
     } catch (e) {
       showToast(e.message, true);
     }
@@ -264,6 +264,7 @@ if (sandboxSend) {
     const geoVal = $("#sandbox-geo")?.value || "IN";
     const geo = geoVal === "RU" ? "RU-MOW" : "IN-TN";
     const speed = $("#sandbox-speed")?.value || "normal";
+    const httpMethod = $("#sandbox-method")?.value || "POST";
 
     const be = $("#browser-endpoint");
     if (be) be.textContent = endpoint;
@@ -271,27 +272,40 @@ if (sandboxSend) {
     if (bsi) { bsi.textContent = "↻"; bsi.style.animation = "spin 1s infinite linear"; }
 
     try {
-      // Use the /sentinelx/simulate endpoint which is designed for this exact purpose
-      // Map user inputs to the correct scenario name
-      let scenario = "normal";
-      if (endpoint.includes("admin")) scenario = "new_admin_endpoint";
-      else if (endpoint.includes("payment") || endpoint.includes("transfer")) scenario = "privilege_escalation";
+      let scenario = "custom";
+      if (speed === "spike") scenario = "frequency_spike";
       else if (geoVal === "RU") scenario = "impossible_travel";
-      else if (speed === "spike") scenario = "frequency_spike";
+      else if (endpoint.includes("admin")) scenario = "new_admin_endpoint";
+      else if (endpoint.includes("payment") || endpoint.includes("transfer")) scenario = "privilege_escalation";
+      else scenario = "normal";
 
-      const count = speed === "spike" ? 28 : (scenario === "normal" ? 3 : 1);
+      const count = speed === "spike" ? 28 : (scenario === "normal" ? 1 : 1);
+      const payloadSize = httpMethod === "GET" ? 180 : 520;
+      const device = geoVal === "RU" ? "linux-firefox" : "chrome-macos";
 
-      await fetch(`${API}/sentinelx/simulate`, {
+      const simRes = await fetch(`${API}/sentinelx/simulate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identity_id: currentIdentity, scenario, count })
+        body: JSON.stringify({
+          identity_id: currentIdentity,
+          scenario,
+          count,
+          method: httpMethod,
+          endpoint: endpoint,
+          geo: geo,
+          device: device,
+          payload_size: payloadSize
+        })
       });
 
-      await new Promise(r => setTimeout(r, 500));
+      const simData = await simRes.json();
+      const latestResult = (simData.results && simData.results.length > 0) ? simData.results[simData.results.length - 1] : null;
+
+      await new Promise(r => setTimeout(r, 200));
       await pollRisk();
       await pollAlerts();
 
-      const state = lastScoredRequest;
+      const state = latestResult || lastScoredRequest;
       const tier = state?.tier || "allow";
       const tColor = tierColor(tier);
 
@@ -303,22 +317,23 @@ if (sandboxSend) {
 
       const body = $("#browser-body");
       if (body) {
+        const reasonsList = (state?.reasons || []).map(r => r.message || r).join("<br>");
         if (tier === 'revoke' || tier === 'restrict') {
           body.innerHTML = `
             <div class="browser-block-view">
-              <h1>🛡️ CONNECTION TERMINATED</h1>
-              <p>ERR_SENTINELX_403_FORBIDDEN</p>
-              <p style="margin-top:16px; opacity:0.7">Identity <strong>${currentIdentity}</strong> has been dynamically revoked.</p>
-              <p style="margin-top:8px; font-size:12px; opacity:0.5">Scenario: ${scenario} | Risk: ${Math.round(state?.risk_score || 0)}/100</p>
+              <h1>🛡️ ACCESS RESTRICTED / REVOKED</h1>
+              <p>HTTP 429 / 401 — High Risk Detected (${Math.round(state?.risk_score || 0)}/100)</p>
+              <p style="margin-top:14px; font-size:13px; opacity:0.9"><strong>Reasons:</strong><br>${reasonsList || 'Policy restriction violation'}</p>
+              <p style="margin-top:10px; font-size:12px; opacity:0.6">Identity: <strong>${currentIdentity}</strong> | Target: <strong>${endpoint}</strong> | Location: <strong>${geo}</strong></p>
             </div>
           `;
         } else if (tier === 'step_up') {
           body.innerHTML = `
             <div class="browser-block-view" style="background:rgba(245, 158, 11, 0.1); color:#f59e0b">
-              <h1>🔐 MFA REQUIRED</h1>
-              <p>Step-Up Authentication Triggered</p>
-              <p style="margin-top:16px; opacity:0.7">Please verify with OTP to continue.</p>
-              <p style="margin-top:8px; font-size:12px; opacity:0.5">Scenario: ${scenario} | Risk: ${Math.round(state?.risk_score || 0)}/100</p>
+              <h1>🔐 MFA STEP-UP REQUIRED</h1>
+              <p>HTTP 401 — Risk Score ${Math.round(state?.risk_score || 0)}/100</p>
+              <p style="margin-top:14px; font-size:13px; opacity:0.9"><strong>Challenge:</strong> One-Time Passcode (OTP) challenge issued.</p>
+              <p style="margin-top:10px; font-size:12px; opacity:0.8">Reason: ${reasonsList || 'Privilege or location drift detected'}</p>
             </div>
           `;
         } else {
@@ -327,11 +342,13 @@ if (sandboxSend) {
   "status": 200,
   "endpoint": "${endpoint}",
   "identity": "${currentIdentity}",
+  "method": "${httpMethod}",
   "verdict": "ALLOWED",
   "risk_score": ${Math.round(state?.risk_score || 0)},
+  "ml_anomaly_score": ${Math.round(state?.ml_score || 0)},
+  "rule_score": ${Math.round(state?.rule_score || 0)},
   "tier": "${tier}",
-  "scenario": "${scenario}",
-  "message": "Request passed all SentinelX filters."
+  "message": "Passed Zero Trust ML & deterministic filters."
 }</div>
           `;
         }
@@ -342,12 +359,12 @@ if (sandboxSend) {
       if (logBody) {
         const idle = logBody.querySelector(".log-idle");
         if (idle) idle.remove();
-        const c = (tier === 'revoke' || tier === 'restrict') ? 'c403' : 'c200';
-        logBody.innerHTML += `<div class="log-line"><span class="arr">→</span><span class="url">POST ${endpoint}</span><span class="status ${c}">${tier.toUpperCase()}</span><span class="ms">${Math.floor(Math.random() * 15 + 3)}ms</span></div>`;
+        const c = (tier === 'revoke' || tier === 'restrict') ? 'c403' : (tier === 'step_up' ? 'c403' : 'c200');
+        logBody.innerHTML += `<div class="log-line"><span class="arr">→</span><span class="url">${httpMethod} ${endpoint} (${geo})</span><span class="status ${c}">${tier.toUpperCase()} (${Math.round(state?.risk_score || 0)})</span><span class="ms">${Math.floor(Math.random() * 10 + 2)}ms</span></div>`;
         logBody.scrollTop = logBody.scrollHeight;
       }
 
-      showToast(`Scenario "${scenario}" executed — Tier: ${tier.toUpperCase()}`);
+      showToast(`Request scored: ${Math.round(state?.risk_score || 0)}/100 — Tier: ${tier.toUpperCase()}`);
 
     } catch (e) {
       console.error("Sandbox error:", e);
@@ -383,33 +400,33 @@ function updatePipelineUI() {
 
   resetPipeline();
 
-  setTimeout(() => { pulseLine(1); const el = $("#ps-1"); if (el) el.classList.add("active-stage"); const d = $("#ps-1-data"); if (d) d.textContent = `identity_id: ${currentIdentity}\nremote_ip: 10.0.x.x\nuser_agent: Simulated`; const l = $("#ps-1-lat"); if (l) l.textContent = "0.2ms"; }, 0);
-  setTimeout(() => { pulseLine(2); const el = $("#ps-2"); if (el) el.classList.add("active-stage"); const d = $("#ps-2-data"); if (d) d.textContent = `Baseline fetched from Redis.\nFeatures normalized [1x7].`; const l = $("#ps-2-lat"); if (l) l.textContent = "3.1ms"; }, 300);
+  setTimeout(() => { pulseLine(1); const el = $("#ps-1"); if (el) el.classList.add("active-stage"); const d = $("#ps-1-data"); if (d) d.textContent = `identity_id: ${currentIdentity}\nendpoint: ${s.endpoint || '/profile'}`; const l = $("#ps-1-lat"); if (l) l.textContent = "0.2ms"; }, 0);
+  setTimeout(() => { pulseLine(2); const el = $("#ps-2"); if (el) el.classList.add("active-stage"); const d = $("#ps-2-data"); if (d) d.textContent = `Baseline extracted.\n7-signal vector computed.`; const l = $("#ps-2-lat"); if (l) l.textContent = "2.1ms"; }, 300);
   setTimeout(() => {
     pulseLine(3);
     const a = $("#ps-3a"); if (a) a.classList.add("active-stage");
     const b = $("#ps-3b"); if (b) b.classList.add("active-stage");
-    const da = $("#ps-3a-data"); if (da) da.textContent = `Rule Hits: ${s.reasons ? s.reasons.length : 0}\nScore: ${Math.round(s.rule_score || 0)}`;
-    const db = $("#ps-3b-data"); if (db) db.textContent = `IsoForest Trees: 100\nScore: ${Math.round(s.ml_score || 0)}`;
+    const da = $("#ps-3a-data"); if (da) da.textContent = `Rule Hits: ${s.reasons ? s.reasons.length : 0}\nScore: ${Math.round(s.rule_score || 0)}/100`;
+    const db = $("#ps-3b-data"); if (db) db.textContent = `IsoForest Trees: 150\nScore: ${Math.round(s.ml_score || 0)}/100`;
   }, 600);
-  setTimeout(() => { pulseLine(4); const el = $("#ps-4"); if (el) el.classList.add("active-stage"); const d = $("#ps-4-data"); if (d) d.textContent = `Blend: ML(55%) + Rule(45%)\nFinal Composite: ${Math.round(s.risk_score || 0)}`; }, 900);
-  setTimeout(() => { const el = $("#ps-5"); if (el) el.classList.add("active-stage"); const d = $("#ps-5-data"); if (d) { d.textContent = `Verdict: ${(s.tier || 'allow').toUpperCase()}\nThreshold passed.`; d.style.color = tierColor(s.tier); } }, 1200);
+  setTimeout(() => { pulseLine(4); const el = $("#ps-4"); if (el) el.classList.add("active-stage"); const d = $("#ps-4-data"); if (d) d.textContent = `Blend: ML(55%) + Rule(45%)\nFinal Risk: ${Math.round(s.risk_score || 0)}/100`; }, 900);
+  setTimeout(() => { const el = $("#ps-5"); if (el) el.classList.add("active-stage"); const d = $("#ps-5-data"); if (d) { d.textContent = `Verdict: ${(s.tier || 'allow').toUpperCase()}\nAction: ${s.action || 'allow'}`; d.style.color = tierColor(s.tier); } }, 1200);
 
   if (s.features && Array.isArray(s.features)) {
     const keys = ['freq', 'novelty', 'geo', 'device', 'time', 'payload', 'age'];
-    const caps = [50, 1.0, 1.0, 1.0, 10, 3, 100];
-    const fixeds = [1, 2, 2, 2, 1, 2, 0];
+    const caps = [50, 1.0, 1.0, 1.0, 1.0, 4.0, 3600];
+    const fixeds = [1, 2, 2, 2, 2, 2, 0];
 
     keys.forEach((key, i) => {
-      const val = s.features[i] || 0;
+      const val = s.features[i] ?? 0;
       let pct = (Math.abs(val) / caps[i]) * 100;
-      pct = Math.max(5, Math.min(100, pct));
+      pct = Math.max(8, Math.min(100, pct));
       const fv = $(`#fv-${key}`);
-      if (fv) fv.textContent = val.toFixed(fixeds[i]);
+      if (fv) fv.textContent = Number(val).toFixed(fixeds[i]);
       const fb = $(`#fb-${key}`);
       if (fb) {
         fb.style.height = `${pct}%`;
-        fb.style.background = pct > 75 ? '#ef4444' : pct > 40 ? '#f59e0b' : '#818cf8';
+        fb.style.background = pct > 70 ? '#ef4444' : pct > 35 ? '#f59e0b' : '#818cf8';
       }
     });
   }

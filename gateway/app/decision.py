@@ -74,6 +74,9 @@ async def decide(ctx: RequestContext, fv: FeatureVector, store: BaseStore) -> Ri
     # Get behavioral context
     behavioral_context = get_behavioral_context(ctx, profile)
 
+    from app.features import feature_vector_to_array
+    feature_arr = feature_vector_to_array(fv)
+
     decision = RiskDecision(
         identity_id=ctx.identity_id,
         session_id=ctx.session_id,
@@ -85,6 +88,8 @@ async def decide(ctx: RequestContext, fv: FeatureVector, store: BaseStore) -> Ri
         rule_triggered=hard_trigger,
         ml_score=ml_score,
         rule_score=rule_score,
+        features=feature_arr,
+        feature_details=fv.model_dump(),
     )
 
     # Record decision for future analysis

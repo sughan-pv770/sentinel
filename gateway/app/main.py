@@ -27,10 +27,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(gateway.router)
 app.include_router(sentinelx.router)
 app.include_router(incidents_router.router)
 app.include_router(telemetry_router.router)
+app.include_router(gateway.router)
 
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

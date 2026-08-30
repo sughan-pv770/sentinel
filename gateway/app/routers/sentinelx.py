@@ -72,25 +72,126 @@ async def get_stats():
     return stats
 
 
+@router.get("/users")
+async def get_users():
+    store = get_store()
+    users = await store.list_users()
+    # If store has empty users list, try origin fallback or return defaults
+    if not users:
+        from app.proxy import get_client
+        try:
+            client = get_client()
+            res = await client.get("/users", headers={"x-identity-id": "u_admin"}, timeout=2.0)
+            if res.status_code == 200:
+                data = res.json()
+                for u in data.get("users", []):
+                    await store.register_user(
+                        identity_id=u["identity_id"],
+                        name=u["name"],
+                        role=u["role"],
+                        network_tag=u.get("network_tag"),
+                        supervisor_id=u.get("supervisor_id"),
+                    )
+                users = await store.list_users()
+        except Exception:
+            pass
+    return {"users": users}
+
+
+@router.post("/users")
+async def add_user_endpoint(user_data: dict):
+    identity_id = user_data.get("identity_id", "").strip()
+    name = user_data.get("name", "").strip()
+    role = user_data.get("role", "student")
+    network_tag = user_data.get("network_tag")
+    supervisor_id = user_data.get("supervisor_id")
+
+    if not identity_id or not name:
+        raise HTTPException(status_code=400, detail="identity_id and name are required")
+
+    store = get_store()
+    registered = await store.register_user(
+        identity_id=identity_id,
+        name=name,
+        role=role,
+        network_tag=network_tag,
+        supervisor_id=supervisor_id
+    )
+
+    # Sync with origin DB if available
+    from app.proxy import get_client
+    try:
+        client = get_client()
+        await client.post(
+            "/admin/add_user",
+            json=registered,
+            headers={"x-identity-id": "u_admin"},
+            timeout=2.0
+        )
+    except Exception as e:
+        logger.warning(f"Could not forward user creation to origin: {e}")
+
+    return {"status": "created", "user": registered}
+
+
 @router.post("/simulate")
 async def simulate(req: SimulateRequest):
     """Fires `count` requests of the given scenario straight through the
     real feature-extraction + rule + ML pipeline (not mocked results) so
     the dashboard shows genuine scoring for the demo."""
     store = get_store()
-    valid = {"normal", "frequency_spike", "new_admin_endpoint", "impossible_travel", "privilege_escalation"}
+    valid = {"normal", "frequency_spike", "new_admin_endpoint", "impossible_travel", "privilege_escalation", "custom"}
     if req.scenario not in valid:
         raise HTTPException(status_code=400, detail=f"scenario must be one of {sorted(valid)}")
 
     if req.scenario == "frequency_spike":
         await prime_frequency_spike(store, req.identity_id, n=34)
 
+    # Scenarios that should NOT learn into the baseline — otherwise repeating
+    # an attack demo would teach the engine that the attack is "normal",
+    # causing scores to drop on subsequent attempts.
+    non_recording_scenarios = {"privilege_escalation", "impossible_travel", "new_admin_endpoint"}
+
     results = []
     for _ in range(max(1, req.count)):
-        ctx = build_scenario(req.identity_id, req.scenario)
+        if req.scenario == "custom":
+            ctx = build_scenario(req.identity_id, "normal")
+        else:
+            ctx = build_scenario(req.identity_id, req.scenario)
+
+        if req.method:
+            ctx.method = req.method
+        if req.endpoint:
+            ctx.endpoint = req.endpoint
+        if req.geo:
+            ctx.geo = req.geo
+        if req.device:
+            ctx.device = req.device
+        if req.payload_size:
+            ctx.payload_size = req.payload_size
+        if req.token_age_seconds:
+            ctx.token_age_seconds = req.token_age_seconds
+            
         fv = await extract_features(ctx, store)
         decision = await decide(ctx, fv, store)
-        await store.record_request(ctx.identity_id, ctx.endpoint, ctx.geo, ctx.device, ctx.timestamp.hour, ctx.timestamp.timestamp())
+
+        # Only record benign scenarios into the baseline so attack demos
+        # stay reproducible across repeated clicks.
+        effective_scenario = req.scenario
+        if req.scenario == "custom":
+            # For custom, decide based on overrides
+            ep = req.endpoint or ""
+            geo = req.geo or "IN-TN"
+            if geo in ("RU-MOW", "BR-SP", "NG-LA"):
+                effective_scenario = "impossible_travel"
+            elif any(ep.startswith(p) for p in ("/admin", "/payments")):
+                effective_scenario = "privilege_escalation"
+            else:
+                effective_scenario = "normal"
+
+        if effective_scenario not in non_recording_scenarios:
+            await store.record_request(ctx.identity_id, ctx.endpoint, ctx.geo, ctx.device, ctx.timestamp.hour, ctx.timestamp.timestamp())
+
         await store.set_risk_state(ctx.identity_id, decision.model_dump(mode="json"))
         if decision.tier != "allow":
             alert = decision.model_dump(mode="json")

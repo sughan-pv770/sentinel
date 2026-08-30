@@ -45,13 +45,26 @@ class BaseStore:
     async def update_incident(self, incident: dict): ...
     async def get_incidents_by_identity(self, identity_id: str, limit: int = 20) -> list: ...
     async def get_incident_stats(self) -> dict: ...
+    async def register_user(self, identity_id: str, name: str, role: str, network_tag: str = None, supervisor_id: str = None) -> dict: ...
+    async def list_users(self) -> list: ...
+
+
+def _default_profile_dict(role: str = "student") -> dict:
+    return {
+        "endpoints": {},
+        "geos": {},
+        "devices": {},
+        "hours": [],
+        "timestamps": deque(maxlen=MAX_HISTORY_PER_IDENTITY),
+        "total": 0,
+        "role": role,
+    }
 
 
 class InMemoryStore(BaseStore):
     def __init__(self):
-        self._profiles: dict[str, dict] = defaultdict(
-            lambda: {"endpoints": {}, "geos": {}, "devices": {}, "hours": [], "timestamps": deque(maxlen=MAX_HISTORY_PER_IDENTITY), "total": 0}
-        )
+        self._profiles: dict[str, dict] = defaultdict(lambda: _default_profile_dict("student"))
+        self._users: dict[str, dict] = {}
         self._risk_state: dict[str, dict] = {}
         self._alerts: deque = deque(maxlen=MAX_ALERTS)
         self._revoked: set[str] = set()
@@ -60,6 +73,62 @@ class InMemoryStore(BaseStore):
         self._incidents: deque = deque(maxlen=200)
         self._incidents_by_id: dict[str, dict] = {}
         self._lock = asyncio.Lock()
+        self._seed_default_profiles()
+
+    def _seed_default_profiles(self):
+        defaults = [
+            ("u_admin", "Priya Nair", "admin", "Core", None,
+             {"/admin/add_user": 5, "/admin/users": 10, "/users": 8, "/profile": 12},
+             {"IN-TN": 20, "IN-KA": 15}, {"chrome-macos": 35}),
+            ("u_manager1", "Prof. Smith", "manager", "CS-Dept", "u_admin",
+             {"/profile": 10, "/orders": 12, "/admin/users": 5},
+             {"IN-TN": 27}, {"chrome-macos": 27}),
+            ("u_alex", "Alex Rao", "student", "CS-Dept-Lab1", "u_manager1",
+             {"/profile": 25, "/orders": 30},
+             {"IN-TN": 50, "IN-KA": 5}, {"chrome-macos": 45, "safari-ios": 10}),
+            ("u_mina", "Mina Okafor", "student", "Library", "u_manager1",
+             {"/profile": 20, "/orders": 15},
+             {"IN-KA": 35}, {"safari-ios": 35}),
+            ("svc_billing", "billing-worker", "service", "Internal", None,
+             {"/payments/transfer": 50, "/orders": 30},
+             {"IN-TN": 80}, {"internal-service": 80}),
+        ]
+        now = time.time()
+        for uid, name, role, tag, sup, endpoints, geos, devices in defaults:
+            self._users[uid] = {
+                "identity_id": uid, "name": name, "role": role,
+                "network_tag": tag, "supervisor_id": sup
+            }
+            p = self._profiles[uid]
+            p["role"] = role
+            p["endpoints"] = dict(endpoints)
+            p["geos"] = dict(geos)
+            p["devices"] = dict(devices)
+            p["hours"] = [9, 10, 11, 12, 14, 15, 16]
+            p["total"] = sum(endpoints.values())
+            for i in range(min(5, p["total"])):
+                p["timestamps"].append(now - (3600 * (i + 1)))
+
+    async def list_users(self) -> list:
+        return list(self._users.values())
+
+    async def register_user(self, identity_id: str, name: str, role: str, network_tag: str = None, supervisor_id: str = None) -> dict:
+        async with self._lock:
+            user_data = {
+                "identity_id": identity_id,
+                "name": name,
+                "role": role,
+                "network_tag": network_tag,
+                "supervisor_id": supervisor_id,
+            }
+            self._users[identity_id] = user_data
+            p = self._profiles[identity_id]
+            p["role"] = role
+            p["endpoints"]["/profile"] = 1
+            p["geos"]["IN-TN"] = 1
+            p["devices"]["chrome-macos"] = 1
+            p["total"] = max(p["total"], 1)
+            return user_data
 
     async def get_profile(self, identity_id: str) -> dict:
         p = self._profiles[identity_id]
@@ -70,6 +139,7 @@ class InMemoryStore(BaseStore):
             "hours": list(p["hours"]),
             "timestamps": list(p["timestamps"]),
             "total": p["total"],
+            "role": p.get("role", self._users.get(identity_id, {}).get("role", "student")),
         }
 
     async def record_request(self, identity_id: str, endpoint: str, geo: str, device: str, hour: int, ts: float):

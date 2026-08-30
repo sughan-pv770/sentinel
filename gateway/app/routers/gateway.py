@@ -125,3 +125,16 @@ async def gateway_proxy(service: str, path: str, request: Request):
         )
     except Exception as e:
         return JSONResponse(status_code=502, content={"error": "origin_unreachable", "detail": str(e)})
+
+
+@router.api_route("/profile", methods=["GET", "POST"])
+@router.api_route("/orders", methods=["GET", "POST"])
+@router.api_route("/users", methods=["GET", "POST"])
+@router.api_route("/payments/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+@router.api_route("/admin/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def direct_resource_proxy(request: Request, path: str = ""):
+    """Direct resource shortcut: allows callers to hit http://localhost:8080/profile
+    or /payments/transfer directly while going through full SentinelX security scoring."""
+    raw_path = request.url.path.lstrip("/")
+    return await gateway_proxy(service="demo-service", path=raw_path, request=request)
+

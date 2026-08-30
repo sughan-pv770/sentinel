@@ -92,16 +92,18 @@ def build_scenario(identity_id: str, scenario: str) -> RequestContext:
         )
 
     if scenario == "privilege_escalation":
+        # Uses normal local geo/device so it isolates the privilege escalation signal
+        # and triggers Step-Up MFA (Risk ~60) rather than impossible travel revocation.
         return RequestContext(
             identity_id=identity_id,
             session_id=session_id,
             endpoint="/payments/transfer",
             method="POST",
             ip=_rand_ip(),
-            geo=random.choice(["RU-MOW", "BR-SP"]),
-            device="linux-firefox",
-            token_age_seconds=random.uniform(5, 60),
-            payload_size=random.randint(2000, 6000),
+            geo="IN-TN",
+            device="chrome-macos",
+            token_age_seconds=random.uniform(600, 1800),
+            payload_size=random.randint(250, 600),
             timestamp=now,
         )
 

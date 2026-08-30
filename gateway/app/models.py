@@ -42,6 +42,8 @@ class RiskDecision(BaseModel):
     rule_triggered: bool
     ml_score: float
     rule_score: float
+    features: Optional[List[float]] = None
+    feature_details: Optional[Dict[str, Any]] = None
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -54,5 +56,11 @@ class PolicyUpdate(BaseModel):
 
 class SimulateRequest(BaseModel):
     identity_id: str = "u_alex"
-    scenario: str = "normal"  # normal | frequency_spike | new_admin_endpoint | impossible_travel | privilege_escalation
+    scenario: str = "normal"  # normal | frequency_spike | new_admin_endpoint | impossible_travel | privilege_escalation | custom
     count: int = 1
+    method: Optional[str] = "POST"
+    endpoint: Optional[str] = None
+    geo: Optional[str] = None
+    device: Optional[str] = None
+    payload_size: Optional[int] = None
+    token_age_seconds: Optional[float] = None

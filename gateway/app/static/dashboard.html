@@ -12,7 +12,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/style.css?v=4" />
+  <link rel="stylesheet" href="/static/css/style.css?v=6" />
 </head>
 
 <body>
@@ -238,11 +238,20 @@
           </div>
           <div class="sandbox-body">
             <div class="sandbox-row">
-              <span class="sandbox-method">POST</span>
+              <select id="sandbox-method" class="sandbox-method sandbox-select"
+                style="margin-right: 12px; width: 85px;">
+                <option value="GET">GET</option>
+                <option value="POST" selected>POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
               <div class="sandbox-presets" id="sandbox-presets">
                 <button class="preset-btn active" data-ep="/profile">/profile</button>
+                <button class="preset-btn" data-ep="/orders">/orders</button>
                 <button class="preset-btn" data-ep="/payments/transfer">/payments/transfer</button>
                 <button class="preset-btn" data-ep="/admin/users">/admin/users</button>
+                <button class="preset-btn" data-ep="/admin/add_user">/admin/add_user</button>
               </div>
               <input type="hidden" id="sandbox-endpoint" value="/profile" />
               <button id="sandbox-send" class="sandbox-btn-send">Send Request ➔</button>
@@ -504,7 +513,7 @@
   <!-- Toast notifications -->
   <div class="toast-stack" id="toast-stack"></div>
 
-  <script src="/static/js/dashboard.js?v=4"></script>
+  <script src="/static/js/dashboard.js?v=6"></script>
 </body>
 
 </html>

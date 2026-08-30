@@ -6,7 +6,21 @@ from __future__ import annotations
 from app.models import RequestContext, FeatureVector, Reason
 from app.state_store import BaseStore
 
-ADMIN_PREFIXES = ("/admin", "/payments")
+# Endpoints that always require elevated trust for non-privileged users.
+SENSITIVE_PREFIXES = ("/admin", "/payments")
+
+# Roles that are expected to access sensitive endpoints routinely.
+PRIVILEGED_ROLES = {"admin", "service"}
+
+
+def _is_privileged(profile: dict, ctx: RequestContext) -> bool:
+    """Check if the identity is allowed unrestricted access to sensitive paths."""
+    role = profile.get("role", "student")
+    if role in PRIVILEGED_ROLES:
+        return True
+    if ctx.identity_id in ("u_admin", "admin") or ctx.identity_id.startswith("u_admin"):
+        return True
+    return False
 
 
 async def evaluate_rules(ctx: RequestContext, fv: FeatureVector, store: BaseStore) -> tuple[float, bool, list[Reason]]:
@@ -27,18 +41,33 @@ async def evaluate_rules(ctx: RequestContext, fv: FeatureVector, store: BaseStor
         reasons.append(Reason(code="impossible_travel",
                                message=f"Source geo '{ctx.geo}' never seen before for this identity, "
                                        f"appearing after {profile.get('total')} prior requests from other regions"))
-        score += 55
+        score += 70
         hard_trigger = True
 
-    # 3. Privilege escalation attempt: never-seen admin/payments endpoint
-    is_sensitive = any(ctx.endpoint.startswith(prefix) for prefix in ADMIN_PREFIXES)
-    if is_sensitive and fv.endpoint_novelty:
-        reasons.append(Reason(code="privilege_escalation_attempt",
-                               message=f"First-ever access to sensitive endpoint '{ctx.endpoint}' from this identity"))
-        score += 60
+    # 3. Sensitive endpoint access by non-privileged identity.
+    #    Unlike the old rule which only fired on *first* access (endpoint_novelty),
+    #    Zero Trust requires step-up verification EVERY time a student/manager
+    #    touches /payments or /admin endpoints.
+    is_sensitive = any(ctx.endpoint.startswith(prefix) for prefix in SENSITIVE_PREFIXES)
+    privileged = _is_privileged(profile, ctx)
+
+    if is_sensitive and not privileged:
+        # Base: sensitive endpoint access from non-privileged role
+        reasons.append(Reason(
+            code="sensitive_endpoint_access",
+            message=f"Non-privileged identity '{ctx.identity_id}' (role: {profile.get('role', 'student')}) "
+                    f"accessing sensitive endpoint '{ctx.endpoint}' — step-up verification required"))
+        score += 45
         hard_trigger = True
 
-    # 4. Frequency spike -- hard rule kicks in above 6x a "normal" burst (10/min)
+        # Bonus: first-ever access makes it even riskier
+        if fv.endpoint_novelty:
+            reasons.append(Reason(
+                code="first_time_sensitive_access",
+                message=f"First-ever access to '{ctx.endpoint}' — no prior history for this identity"))
+            score += 10
+
+    # 4. Frequency spike — hard rule kicks in above 6× a "normal" burst (10/min)
     if fv.request_frequency_per_min >= 30:
         reasons.append(Reason(code="frequency_spike",
                                message=f"Request frequency {int(fv.request_frequency_per_min)}/min is far above a normal burst"))
