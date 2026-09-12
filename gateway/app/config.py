@@ -27,12 +27,19 @@ class Settings(BaseSettings):
     # Rolling baseline window
     baseline_window_requests: int = 500
 
+    # ── Authentication ──────────────────────────────────────────────────────
+    # Change this in production! Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+    jwt_secret_key: str = "sentinelx-dev-secret-key-change-in-production-please"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 480  # 8 hours — comfortable for a demo day
+
     class Config:
         env_file = ".env"
         env_prefix = "SENTINELX_"
 
 
 settings = Settings()
+
 
 # Default Zero Trust policy (§7 of the master doc). Mutable at runtime via
 # POST /sentinelx/policy -- kept as a module-level dict so both the risk

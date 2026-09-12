@@ -6,7 +6,7 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+# dist/
 downloads/
 eggs/
 .eggs/
@@ -37,6 +37,15 @@ venv.bak/
 
 # macOS
 .DS_Store
+
+# Node
+node_modules/
+portal/node_modules/
+npm-debug.log*
+yarn-debug.log*
+
+# Testing & Cache
+.pytest_cache/
 
 # IDEs
 .vscode/

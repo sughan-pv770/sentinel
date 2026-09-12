@@ -144,16 +144,22 @@ async def simulate(req: SimulateRequest):
     if req.scenario not in valid:
         raise HTTPException(status_code=400, detail=f"scenario must be one of {sorted(valid)}")
 
+    count = max(1, min(req.count, 5000))
+
     if req.scenario == "frequency_spike":
-        await prime_frequency_spike(store, req.identity_id, n=34)
+        await prime_frequency_spike(store, req.identity_id, n=count)
 
     # Scenarios that should NOT learn into the baseline — otherwise repeating
     # an attack demo would teach the engine that the attack is "normal",
     # causing scores to drop on subsequent attempts.
     non_recording_scenarios = {"privilege_escalation", "impossible_travel", "new_admin_endpoint"}
 
+    # Run real pipeline evaluation on representative sample (max 3 iterations for speed)
+    eval_iterations = min(count, 3)
     results = []
-    for _ in range(max(1, req.count)):
+    last_decision = None
+
+    for _ in range(eval_iterations):
         if req.scenario == "custom":
             ctx = build_scenario(req.identity_id, "normal")
         else:
@@ -174,12 +180,10 @@ async def simulate(req: SimulateRequest):
             
         fv = await extract_features(ctx, store)
         decision = await decide(ctx, fv, store)
+        last_decision = decision
 
-        # Only record benign scenarios into the baseline so attack demos
-        # stay reproducible across repeated clicks.
         effective_scenario = req.scenario
         if req.scenario == "custom":
-            # For custom, decide based on overrides
             ep = req.endpoint or ""
             geo = req.geo or "IN-TN"
             if geo in ("RU-MOW", "BR-SP", "NG-LA"):
@@ -192,13 +196,16 @@ async def simulate(req: SimulateRequest):
         if effective_scenario not in non_recording_scenarios:
             await store.record_request(ctx.identity_id, ctx.endpoint, ctx.geo, ctx.device, ctx.timestamp.hour, ctx.timestamp.timestamp())
 
-        await store.set_risk_state(ctx.identity_id, decision.model_dump(mode="json"))
-        if decision.tier != "allow":
-            alert = decision.model_dump(mode="json")
-            alert["service"] = "origin-demo"
-            alert["simulated"] = True
-            await store.add_alert(alert)
-            log_decision(logger, alert)
         results.append(decision.model_dump(mode="json"))
 
-    return {"scenario": req.scenario, "identity_id": req.identity_id, "results": results}
+    if last_decision:
+        await store.set_risk_state(req.identity_id, last_decision.model_dump(mode="json"))
+        if last_decision.tier != "allow":
+            alert = last_decision.model_dump(mode="json")
+            alert["service"] = "origin-demo"
+            alert["simulated"] = True
+            alert["burst_count"] = count
+            await store.add_alert(alert)
+            log_decision(logger, alert)
+
+    return {"scenario": req.scenario, "identity_id": req.identity_id, "count": count, "tier": last_decision.tier if last_decision else "allow", "results": results}
