@@ -1,7 +1,7 @@
 """
-ML layer (§4.4.2): lightweight unsupervised anomaly detector. Trained once
+ML layer: lightweight unsupervised anomaly detector. Trained once
 at process startup on synthetic normal traffic (no labelled attack data
-needed for the hackathon MVP -- matches the master doc's design note).
+needed for unsupervised anomaly detection).
 
 sklearn's IsolationForest.decision_function returns higher = more normal,
 lower/negative = more anomalous. We invert and rescale into a 0-100

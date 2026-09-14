@@ -1,16 +1,61 @@
-# React + Vite
+# 🖥️ SentinelX Security Portal & SOC Console
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+The **SentinelX Portal** is a high-performance Single Page Application (SPA) built with React and Vite. It serves as both the **Security Operations Center (SOC) Command Console** for administrative oversight and the **Identity Self-Service Portal** for individual user telemetry and activity auditing.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🌟 Key Capabilities
 
-## React Compiler
+- **Real-Time SOC Command Center**: Live visibility into active requests, latency percentiles, dynamic policy thresholds, and active sessions.
+- **Incident & Alert Ledger**: Structured, explainable threat feeds mapping behavioral anomalies to specific security vector signals.
+- **Interactive Security Sandbox**: Real-time traffic emulator to test and visualize gateway scoring across varied roles, endpoints, geolocations, and devices.
+- **Pipeline Vector Visualizer**: Live 5-stage graphical pipeline showing feature vector extraction, isolation forest ML evaluation, deterministic rules, and composite risk scoring.
+- **Identity & Risk Management**: Administrative user registry with role-based policies and user-facing risk profile auditing.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the Oxlint configuration
+## 🚀 Development & Build
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+### Prerequisites
+- Node.js 18+
+- npm / yarn / pnpm
+
+### Quick Start
+
+```bash
+# Install dependencies
+npm install
+
+# Start Vite development server (hot reload enabled)
+npm run dev
+```
+The development server will boot at `http://localhost:5173`.
+
+### Production Build
+
+```bash
+# Compile optimized production bundle to /dist
+npm run build
+
+# Preview production build locally
+npm run preview
+```
+
+---
+
+## 📂 Architecture & Directory Structure
+
+```
+portal/
+├── src/
+│   ├── admin/             # SOC Admin Console views (AlertFeed, ApiSandbox, PolicyControl, etc.)
+│   ├── student/           # Identity / User views (Activity, RiskProfile, Notifications)
+│   ├── auth/              # Authentication context, login, and registration views
+│   ├── components/        # Reusable UI widgets, risk gauges, and simulation tools
+│   ├── layouts/           # AdminLayout and UserLayout navigation wrappers
+│   ├── api/               # Unified HTTP client for SentinelX Gateway & Control Plane
+│   ├── App.jsx            # Application routing and role switching
+│   └── main.jsx           # React DOM entrypoint
+├── public/                # Static assets, icons, and favicons
+└── vite.config.js         # Vite bundler configuration
+```

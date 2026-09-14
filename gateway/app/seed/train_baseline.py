@@ -1,8 +1,7 @@
 """
 Generates synthetic "normal" behavioural traffic and trains the Isolation
-Forest on it (§4.4.2 -- "trained per-identity or per-role on the
-behavioural feature vector, since labelled attack data won't exist for a
-hackathon MVP").
+Forest on it. Model is trained on the behavioural feature vector
+representing standard traffic patterns.
 
 Feature order MUST match app.features.feature_vector_to_array:
   [request_frequency_per_min, endpoint_novelty, geo_change, device_change,

@@ -141,8 +141,8 @@ async def run_load_test():
         print(f"    {tier:<12} {count*BATCH_SIZE:>5} reqs  {bar} {pct:.1f}%")
     print("="*60)
 
-    # --- Hackathon Talking Points --------------------------------------------------
-    print("\n  [INSIGHTS] Key Talking Points for Judges:")
+    # --- Performance Insights & SLA Evaluation ------------------------------------
+    print("\n  [INSIGHTS] System Performance & SLA Evaluation:")
     if p99 < 100:
         print(f"  [PASS] p99 latency is {p99:.0f}ms -- well under 100ms SLA")
     elif p99 < 500:

@@ -82,7 +82,7 @@ export default function DemoToolkit() {
         <div className="demo-toolkit-header" onClick={() => setIsOpen(!isOpen)} style={{ cursor: 'pointer' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Rocket size={16} className="text-brand" />
-            <span style={{ fontWeight: 600, fontSize: '13px' }}>⚡ Hackathon Attack Control Panel</span>
+            <span style={{ fontWeight: 600, fontSize: '13px' }}>⚡ Live Attack Simulation Toolkit</span>
           </div>
           {isOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
         </div>
