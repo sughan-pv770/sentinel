@@ -11,6 +11,8 @@ from app.routers import incidents_router
 from app.routers import telemetry_router
 from app.routers import auth as auth_router
 from app.routers import dashboard_api
+from app.routers import sse_router
+from app.routers import mfa_router
 from app.ml_engine import get_ml_engine
 from app.utils.logger import get_logger
 
@@ -19,9 +21,20 @@ logger = get_logger("sentinelx.main")
 app = FastAPI(
     title=settings.app_name,
     description="Adaptive Runtime Zero Trust Security for APIs and Microservices",
-    version="2.0.0",
+    version="3.0.0",
 )
 
+# ── Middleware (order matters: outermost first) ────────────────────────────────
+
+# Observability (outermost — records latency for the entire stack)
+from app.middleware.observability_middleware import ObservabilityMiddleware
+app.add_middleware(ObservabilityMiddleware)
+
+# Rate limiting (before CORS so surge requests are rejected before processing)
+from app.middleware.rate_limit_middleware import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
+
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,11 +45,18 @@ app.add_middleware(
 
 # ── API Routers ────────────────────────────────────────────────────────────────
 app.include_router(auth_router.router)        # /api/auth/*
+app.include_router(mfa_router.router)         # /api/mfa/*
+app.include_router(sse_router.router)         # /api/events/*
 app.include_router(dashboard_api.router)      # /api/dashboard/*
 app.include_router(sentinelx.router)          # /sentinelx/*
 app.include_router(incidents_router.router)   # /sentinelx/incidents/*
 app.include_router(telemetry_router.router)   # /sentinelx/telemetry/*
 app.include_router(gateway.router)            # /gateway/* and direct resource routes
+
+# ── Prometheus Metrics ─────────────────────────────────────────────────────────
+if settings.metrics_enabled:
+    from app.observability import get_metrics_app
+    app.mount("/metrics", get_metrics_app())
 
 # ── Static Files ───────────────────────────────────────────────────────────────
 STATIC_DIR = Path(__file__).parent / "static"
@@ -50,10 +70,16 @@ if PORTAL_DIR.exists():
 
 @app.on_event("startup")
 async def startup():
-    # Warms the Isolation Forest at boot so the first real request isn't
-    # slowed down by training (~50-150ms one-time cost, done once).
+    # Warm the Isolation Forest at boot so the first real request isn't
+    # slowed down by training (~50-150ms one-time cost).
     get_ml_engine()
-    logger.info("SentinelX gateway started, environment=%s" % settings.environment)
+    logger.info(
+        f"SentinelX gateway v3.0.0 started  "
+        f"env={settings.environment}  "
+        f"rate_limit={settings.rate_limit_enabled}  "
+        f"ml_shadow={settings.ml_shadow_mode}  "
+        f"metrics={settings.metrics_enabled}"
+    )
 
 
 # ── Route Handlers ─────────────────────────────────────────────────────────────
@@ -66,14 +92,12 @@ async def serve_portal(full_path: str):
         if file_path.exists() and file_path.is_file():
             return FileResponse(file_path)
         return FileResponse(PORTAL_DIR / "index.html")
-    # Dev mode fallback: redirect to Vite dev server
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="http://localhost:5173")
 
 
 @app.get("/portal", include_in_schema=False)
 async def portal_root():
-    """Redirect /portal to /portal/"""
     if PORTAL_DIR.exists():
         return FileResponse(PORTAL_DIR / "index.html")
     from fastapi.responses import RedirectResponse
@@ -82,7 +106,6 @@ async def portal_root():
 
 @app.get("/")
 async def root():
-    """Root: redirect to portal (new UI) or legacy dashboard."""
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url="/portal")
 
@@ -95,4 +118,21 @@ async def legacy_dashboard():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "sentinelx-gateway", "version": "2.0.0"}
+    """Liveness + readiness probe endpoint (K8s / ALB)."""
+    from app.state_store import get_store
+    from app.services.circuit_breaker import get_ml_circuit_breaker
+    from app.services.sse_manager import get_sse_manager
+
+    store = get_store()
+    cb = get_ml_circuit_breaker()
+    sse = get_sse_manager()
+
+    return {
+        "status": "ok",
+        "service": "sentinelx-gateway",
+        "version": "3.0.0",
+        "environment": settings.environment,
+        "ml_circuit_breaker": cb.status(),
+        "sse_connections": sse.active_connection_count(),
+        "rate_limit_enabled": settings.rate_limit_enabled,
+    }

@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 // Auth
 import LoginPage from './auth/LoginPage';
 import RegisterPage from './auth/RegisterPage';
+import MFAEnrollPage from './auth/MFAEnrollPage';
 import DemoToolkit from './components/DemoToolkit';
 
 // Layouts
@@ -28,7 +29,6 @@ import ApiSandbox from './admin/ApiSandbox';
 
 // ─── Route Guards ─────────────────────────────────────────────────────────────
 
-/** Requires auth. If not logged in, redirect to /login. */
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
@@ -36,19 +36,16 @@ function RequireAuth({ children }) {
   return children;
 }
 
-/** Requires specific role(s). Falls back to correct portal if wrong role. */
 function RequireRole({ roles, children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (!roles.includes(user.role)) {
-    // Redirect to correct portal
     if (user.role === 'admin' || user.role === 'manager') return <Navigate to="/admin" replace />;
     return <Navigate to="/student" replace />;
   }
   return children;
 }
 
-/** Smart root redirect based on role */
 function RootRedirect() {
   const { user, loading } = useAuth();
   if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
@@ -64,12 +61,14 @@ export default function App() {
     <BrowserRouter basename="/portal">
       <AuthProvider>
         <Routes>
-          {/* Root: smart redirect based on role */}
           <Route path="/" element={<RootRedirect />} />
 
-          {/* Login / Register */}
+          {/* Login / Register / MFA */}
           <Route path="/login" element={<LoginRedirect />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/mfa/enroll" element={
+            <RequireAuth><MFAEnrollPage /></RequireAuth>
+          } />
 
           {/* Student Portal */}
           <Route
@@ -109,7 +108,6 @@ export default function App() {
             <Route path="sandbox" element={<ApiSandbox />} />
           </Route>
 
-          {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <DemoToolkit />
@@ -118,11 +116,10 @@ export default function App() {
   );
 }
 
-/** If already logged in, skip the login page and go to correct portal */
 function LoginRedirect() {
-  const { user, loading } = useAuth();
+  const { user, loading, forceLogoutReason } = useAuth();
   if (loading) return <div className="loading-center"><div className="loading-spinner" /></div>;
-  if (user) {
+  if (user && !forceLogoutReason) {
     if (user.role === 'admin' || user.role === 'manager') return <Navigate to="/admin" replace />;
     return <Navigate to="/student" replace />;
   }

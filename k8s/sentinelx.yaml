@@ -1,0 +1,228 @@
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sentinelx
+  labels:
+    app: sentinelx
+
+---
+# Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinelx-gateway
+  namespace: sentinelx
+  labels:
+    app: sentinelx-gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sentinelx-gateway
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: sentinelx-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/metrics"
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+      containers:
+        - name: gateway
+          image: sentinelx/gateway:3.0.0
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: sentinelx-secrets
+            - configMapRef:
+                name: sentinelx-config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+
+---
+# Gateway Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinelx-gateway
+  namespace: sentinelx
+spec:
+  selector:
+    app: sentinelx-gateway
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+
+---
+# HPA — scale on CPU and RPS
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sentinelx-gateway-hpa
+  namespace: sentinelx
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sentinelx-gateway
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+---
+# Redis StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: sentinelx
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: sentinelx
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+  type: ClusterIP
+
+---
+# ConfigMap (non-secret configuration)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sentinelx-config
+  namespace: sentinelx
+data:
+  SENTINELX_ENVIRONMENT: "production"
+  SENTINELX_REDIS_URL: "redis://redis.sentinelx.svc.cluster.local:6379/0"
+  SENTINELX_RATE_LIMIT_BURST_CEILING: "500"
+  SENTINELX_RATE_LIMIT_WINDOW_SECONDS: "60"
+  SENTINELX_RATE_LIMIT_ENABLED: "true"
+  SENTINELX_ML_INFERENCE_TIMEOUT_MS: "50"
+  SENTINELX_ML_SHADOW_MODE: "false"
+  SENTINELX_ML_CIRCUIT_BREAKER_THRESHOLD: "5"
+  SENTINELX_ML_CIRCUIT_BREAKER_RECOVERY_S: "30"
+  SENTINELX_METRICS_ENABLED: "true"
+  SENTINELX_SSE_PING_INTERVAL_SECONDS: "30"
+  SENTINELX_JWT_EXPIRE_MINUTES: "60"
+  SENTINELX_JWT_REFRESH_EXPIRE_HOURS: "168"
+  SENTINELX_MFA_TOTP_ISSUER: "SentinelX"
+  SENTINELX_MFA_OTP_TTL_SECONDS: "300"
+  SENTINELX_MFA_MAX_ATTEMPTS: "5"
+  SENTINELX_MFA_DEVICE_TRUST_DAYS: "30"
+
+---
+# Ingress (NGINX)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sentinelx-ingress
+  namespace: sentinelx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"  # Required for SSE
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - sentinelx.example.com
+      secretName: sentinelx-tls
+  rules:
+    - host: sentinelx.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sentinelx-gateway
+                port:
+                  number: 80

@@ -10,11 +10,21 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
 
   demo-service:
     build: ./demo-service
     ports:
       - "9000:9000"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
 
   gateway:
     build: ./gateway
@@ -24,8 +34,26 @@ services:
       SENTINELX_REDIS_URL: "redis://redis:6379/0"
       SENTINELX_ORIGIN_BASE_URL: "http://demo-service:9000"
       SENTINELX_ENVIRONMENT: "docker-compose"
+      SENTINELX_RATE_LIMIT_BURST_CEILING: "500"
+      SENTINELX_RATE_LIMIT_ENABLED: "true"
+      SENTINELX_ML_INFERENCE_TIMEOUT_MS: "50"
+      SENTINELX_ML_SHADOW_MODE: "false"
+      SENTINELX_MFA_TOTP_ISSUER: "SentinelX"
+      SENTINELX_METRICS_ENABLED: "true"
+      SENTINELX_SSE_PING_INTERVAL_SECONDS: "30"
     depends_on:
       redis:
         condition: service_healthy
       demo-service:
         condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"

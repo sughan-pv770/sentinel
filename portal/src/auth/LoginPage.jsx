@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from './AuthContext';
-import { Shield } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Shield, AlertTriangle } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 
 const DEMO_ACCOUNTS = [
   { id: 'u_admin', label: 'Admin — Priya Nair', role: 'admin', password: 'admin123' },
@@ -10,12 +10,34 @@ const DEMO_ACCOUNTS = [
   { id: 'u_mina', label: 'Student — Mina Okafor', role: 'student', password: 'student123' },
 ];
 
+const REASON_MESSAGES = {
+  session_revoked: 'Your session was terminated by the security system.',
+  rate_burst_surge: 'Your session was terminated due to abnormal request activity.',
+  impossible_travel: 'Your session was terminated due to suspicious geographic activity.',
+  admin_forced_revocation: 'Your session was terminated by a system administrator.',
+  anomaly_detected: 'Your session was terminated due to detected anomalous behavior.',
+  token_used_after_revocation: 'Your session token was invalidated.',
+};
+
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, forceLogoutReason, clearForceLogout } = useAuth();
+  const [searchParams] = useSearchParams();
   const [identity_id, setId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Determine if there's a security alert to show
+  const urlReason = searchParams.get('reason');
+  const alertReason = forceLogoutReason || urlReason;
+  const alertMessage = alertReason
+    ? REASON_MESSAGES[alertReason] || 'Your session was terminated for security reasons.'
+    : null;
+
+  // Clear force logout on unmount
+  useEffect(() => {
+    return () => clearForceLogout?.();
+  }, [clearForceLogout]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -47,6 +69,30 @@ export default function LoginPage() {
 
       <div className="login-page">
         <div className="login-card animate-fade-in">
+          {/* Security Alert Banner */}
+          {alertMessage && (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: '10px',
+              padding: '14px 16px',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px',
+            }}>
+              <AlertTriangle size={20} color="#ef4444" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <div style={{ color: '#ef4444', fontWeight: 600, fontSize: '13px', marginBottom: '4px' }}>
+                  Security Alert
+                </div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '12px', lineHeight: '1.5' }}>
+                  {alertMessage} Please sign in again to continue.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Logo */}
           <div className="login-logo">
             <div className="login-logo-icon">

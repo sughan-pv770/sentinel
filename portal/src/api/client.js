@@ -14,9 +14,32 @@ async function req(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
+
+    // Intercept step_up_required — store the pending request for retry after MFA
+    if (res.status === 401 && err.error === 'step_up_required') {
+      const mfaError = Object.assign(new Error('MFA required'), {
+        status: 401,
+        data: err,
+        mfaRequired: true,
+        challenge: err.challenge,
+        _pendingPath: path,
+        _pendingOptions: options,
+      });
+      throw mfaError;
+    }
+
     throw Object.assign(new Error(err.detail || 'Request failed'), { status: res.status, data: err });
   }
   return res.json();
+}
+
+/**
+ * Retry a request that was blocked by step_up_required
+ * (called after successful MFA verification).
+ */
+export async function retryPendingRequest(mfaError) {
+  if (!mfaError?._pendingPath) return null;
+  return req(mfaError._pendingPath, mfaError._pendingOptions);
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────
@@ -24,7 +47,34 @@ export const auth = {
   login: (identity_id, password) =>
     req('/api/auth/login', { method: 'POST', body: JSON.stringify({ identity_id, password }) }),
   logout: () => req('/api/auth/logout', { method: 'POST' }),
+  refresh: () => req('/api/auth/refresh', { method: 'POST' }),
   me: () => req('/api/auth/me'),
+  revokeAll: (identity_id) => req(`/api/auth/revoke-all/${identity_id}`, { method: 'POST' }),
+};
+
+// ─── MFA ──────────────────────────────────────────────────────────────────────
+export const mfa = {
+  enrollTotp: () => req('/api/mfa/enroll/totp', { method: 'POST' }),
+  verifyTotp: (code, session_id, trust_device = false) =>
+    req('/api/mfa/verify/totp', {
+      method: 'POST',
+      body: JSON.stringify({ code, session_id, trust_device }),
+    }),
+  enrollEmailOtp: (session_id) =>
+    req(`/api/mfa/enroll/email-otp?session_id=${session_id}`, { method: 'POST' }),
+  verifyOtp: (code, session_id) =>
+    req('/api/mfa/verify/otp', {
+      method: 'POST',
+      body: JSON.stringify({ code, session_id }),
+    }),
+  status: (session_id) =>
+    req(`/api/mfa/status${session_id ? `?session_id=${session_id}` : ''}`),
+  trustDevice: () => req('/api/mfa/trust-device', { method: 'POST' }),
+  revokeTrust: (token_id) =>
+    req('/api/mfa/trust-device', {
+      method: 'DELETE',
+      body: JSON.stringify({ token_id }),
+    }),
 };
 
 // ─── Student Dashboard ────────────────────────────────────────────────────────
