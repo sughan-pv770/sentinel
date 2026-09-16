@@ -1,18 +1,19 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { auth as authApi } from '../api/client';
-import { ShieldAlert, X, AlertTriangle } from 'lucide-react';
+import { ShieldAlert, X } from 'lucide-react';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]                     = useState(null);
-  const [loading, setLoading]               = useState(true);
+  const [user, setUser]                           = useState(null);
+  const [loading, setLoading]                     = useState(true);
   const [forceLogoutReason, setForceLogoutReason] = useState(null);
-  // restrict = { message, reason } — shows a non-logout warning overlay
-  const [restrictAlert, setRestrictAlert]   = useState(null);
+  const [restrictAlert, setRestrictAlert]         = useState(null);
+  // pendingMfaChallenge is read by MFAGate to show the TOTP modal immediately
+  const [pendingMfaChallenge, setPendingMfaChallenge] = useState(null);
   const eventSourceRef = useRef(null);
 
-  // ── Bootstrap: restore session ─────────────────────────────────────────────
+  // ── Bootstrap: restore session on page load ────────────────────────────────
   useEffect(() => {
     authApi.me()
       .then(setUser)
@@ -20,7 +21,10 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
-  // ── SSE: Per-identity session event listener ───────────────────────────────
+  // ── SSE: per-identity real-time session event listener ────────────────────
+  // The SSE endpoint at /api/events/session authenticates via the httpOnly
+  // cookie, so each client's stream is scoped ONLY to their identity_id.
+  // Events from another student NEVER reach this connection.
   useEffect(() => {
     if (!user) {
       if (eventSourceRef.current) {
@@ -30,23 +34,18 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    // Open SSE stream — gateway authenticates via cookie so this connection is
-    // automatically scoped to the logged-in user's identity_id.
     const es = new EventSource('/api/events/session', { withCredentials: true });
     eventSourceRef.current = es;
 
-    // ── session_terminated (tier=revoke) ──────────────────────────────────────
-    // Only reaches THIS user's SSE queue (SSEManager is keyed by identity_id).
+    // ── REVOKE → hard logout (only this identity) ─────────────────────────
     es.addEventListener('session_terminated', (event) => {
       try {
         const data = JSON.parse(event.data);
         console.warn('[SentinelX] session_terminated', data);
-
         setForceLogoutReason(data.reason || 'session_revoked');
-
-        // Hard logout: clear state then call server-side logout to clear cookie
         setUser(null);
         setRestrictAlert(null);
+        setPendingMfaChallenge(null);
         authApi.logout().catch(() => {});
       } catch {
         setForceLogoutReason('session_revoked');
@@ -54,16 +53,14 @@ export function AuthProvider({ children }) {
       }
     });
 
-    // ── session_restricted (tier=restrict) ────────────────────────────────────
-    // Show a non-logout warning banner; the student stays logged in but sees
-    // a modal explaining their access has been throttled.
+    // ── RESTRICT → amber warning overlay (student stays logged in) ─────────
     es.addEventListener('session_restricted', (event) => {
       try {
         const data = JSON.parse(event.data);
         console.warn('[SentinelX] session_restricted', data);
         setRestrictAlert({
-          reason: data.reason || 'high_risk_activity',
-          message: data.message || 'Unusual activity detected. Your access has been temporarily restricted.',
+          reason:     data.reason     || 'high_risk_activity',
+          message:    data.message    || 'Unusual activity detected. Your access has been temporarily restricted.',
           risk_score: data.risk_score,
         });
       } catch {
@@ -71,15 +68,20 @@ export function AuthProvider({ children }) {
       }
     });
 
-    es.addEventListener('risk_update', (event) => {
+    // ── STEP_UP → show TOTP/OTP modal immediately (MFAGate reads this) ────
+    es.addEventListener('mfa_challenge', (event) => {
       try {
-        JSON.parse(event.data); // consume; could drive a risk badge later
-      } catch { /* ignore */ }
+        const data = JSON.parse(event.data);
+        console.warn('[SentinelX] mfa_challenge received', data);
+        setPendingMfaChallenge(data.challenge || { method: 'totp', ttl_seconds: 300 });
+      } catch {
+        setPendingMfaChallenge({ method: 'totp', ttl_seconds: 300 });
+      }
     });
 
-    es.onerror = () => {
-      console.warn('[SentinelX] SSE auto-reconnecting…');
-    };
+    es.addEventListener('risk_update', () => { /* could drive a live risk badge */ });
+
+    es.onerror = () => console.warn('[SentinelX] SSE reconnecting…');
 
     return () => {
       es.close();
@@ -90,6 +92,7 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (identity_id, password) => {
     setForceLogoutReason(null);
     setRestrictAlert(null);
+    setPendingMfaChallenge(null);
     const data = await authApi.login(identity_id, password);
     setUser(data);
     return data;
@@ -99,26 +102,29 @@ export function AuthProvider({ children }) {
     await authApi.logout().catch(() => {});
     setUser(null);
     setRestrictAlert(null);
+    setPendingMfaChallenge(null);
   }, []);
 
   const clearForceLogout  = useCallback(() => setForceLogoutReason(null), []);
   const dismissRestrict   = useCallback(() => setRestrictAlert(null), []);
+  const clearMfaChallenge = useCallback(() => setPendingMfaChallenge(null), []);
 
   return (
     <AuthContext.Provider value={{
       user, loading,
       login, logout,
       forceLogoutReason, clearForceLogout,
-      restrictAlert, dismissRestrict,
+      restrictAlert,    dismissRestrict,
+      pendingMfaChallenge, clearMfaChallenge,
     }}>
       {children}
 
-      {/* ── Restrict Warning Overlay (stays logged in) ── */}
+      {/* ── Restrict Warning Overlay (student stays logged in) ── */}
       {restrictAlert && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9998,
-          background: 'rgba(0,0,0,0.7)',
-          backdropFilter: 'blur(8px)',
+          background: 'rgba(0,0,0,0.72)',
+          backdropFilter: 'blur(10px)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 16,
         }}>
@@ -130,14 +136,11 @@ export function AuthProvider({ children }) {
             boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
             position: 'relative',
           }}>
-            <button
-              onClick={dismissRestrict}
-              style={{
-                position: 'absolute', top: 16, right: 16,
-                background: 'transparent', border: 'none',
-                color: 'var(--text-muted)', cursor: 'pointer', padding: 4,
-              }}
-            >
+            <button onClick={dismissRestrict} style={{
+              position: 'absolute', top: 16, right: 16,
+              background: 'transparent', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer', padding: 4,
+            }}>
               <X size={18} />
             </button>
 
@@ -170,7 +173,10 @@ export function AuthProvider({ children }) {
                 background: 'rgba(255,255,255,0.04)',
                 borderRadius: 8, padding: '8px 12px', marginBottom: 16,
               }}>
-                Risk score: <strong style={{ color: '#f59e0b' }}>{Math.round(restrictAlert.risk_score)}/100</strong>
+                Risk score:{' '}
+                <strong style={{ color: '#f59e0b' }}>
+                  {Math.round(restrictAlert.risk_score)}/100
+                </strong>
                 {' — '}your session remains active but some actions may be limited.
               </div>
             )}

@@ -1,48 +1,48 @@
 /**
- * MFAGate — Global MFA interceptor context.
+ * MFAGate — Global MFA interceptor.
  *
- * How it works:
- *  1. Any component that calls an API gets a wrapped `secureCall(fn)` helper.
- *  2. If the API throws `mfaRequired: true`, `secureCall` puts the pending call
- *     into state and opens the TOTP modal instead of letting the error bubble.
- *  3. When the user enters their TOTP code and verification succeeds, we mark
- *     the session as MFA-complete and retry the original request automatically.
- *  4. If the user cancels, the modal closes and the original error is re-thrown.
- *
- * Usage:
- *   const { secureCall } = useMFAGate();
- *   const data = await secureCall(() => api.student.overview());
+ * Shows the TOTP/OTP modal in two ways:
+ *  1. Via secureCall(fn) — wraps any API call; if it throws step_up_required
+ *     the modal appears and retries the request on success.
+ *  2. Via SSE — when the gateway broadcasts an mfa_challenge event (e.g. from
+ *     the simulator), AuthContext sets pendingMfaChallenge which triggers the
+ *     modal immediately without waiting for the next API call.
  */
-import {
-  createContext, useContext, useState, useCallback, useRef,
-} from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { mfa as mfaApi, retryPendingRequest } from '../api/client';
 import { useAuth } from './AuthContext';
-import { Lock, KeyRound, Clock, ShieldAlert, X } from 'lucide-react';
+import { Lock, KeyRound, Clock, X } from 'lucide-react';
 
 const MFAGateContext = createContext(null);
 
 export function MFAGateProvider({ children }) {
-  const { logout } = useAuth();
+  const { logout, pendingMfaChallenge, clearMfaChallenge } = useAuth();
 
-  // The pending MFA error object (contains challenge + the pending request fn)
-  const [mfaState, setMfaState] = useState(null); // { challenge, pendingFn }
+  // State for the modal — either from secureCall or SSE push
+  const [mfaState, setMfaState] = useState(null);
+  // { challenge, pendingError? }  pendingError is set only from secureCall
   const resolveRef = useRef(null);
-  const rejectRef = useRef(null);
+  const rejectRef  = useRef(null);
+
+  // ── Watch for SSE-pushed mfa_challenge (from simulator step_up) ───────────
+  useEffect(() => {
+    if (pendingMfaChallenge && !mfaState) {
+      setMfaState({ challenge: pendingMfaChallenge, pendingError: null });
+    }
+  }, [pendingMfaChallenge]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
-   * secureCall — wrap any API call. If it needs MFA, shows the modal.
-   * Returns the original response on success (after MFA if needed).
+   * secureCall — wraps any API fn.
+   * If it returns step_up_required, shows the MFA modal and retries on success.
    */
   const secureCall = useCallback(async (fn) => {
     try {
       return await fn();
     } catch (err) {
       if (err.mfaRequired) {
-        // Show modal and wait for resolution
         return new Promise((resolve, reject) => {
           resolveRef.current = resolve;
-          rejectRef.current = reject;
+          rejectRef.current  = reject;
           setMfaState({ challenge: err.challenge, pendingError: err });
         });
       }
@@ -52,20 +52,27 @@ export function MFAGateProvider({ children }) {
 
   const handleVerified = useCallback(async (pendingError) => {
     setMfaState(null);
-    try {
-      // Retry the original blocked request now that MFA is complete
-      const result = await retryPendingRequest(pendingError);
-      resolveRef.current?.(result);
-    } catch (err) {
-      rejectRef.current?.(err);
+    clearMfaChallenge();
+    if (pendingError) {
+      // Retry the original blocked request
+      try {
+        const result = await retryPendingRequest(pendingError);
+        resolveRef.current?.(result);
+      } catch (err) {
+        rejectRef.current?.(err);
+      }
+    } else {
+      // SSE-triggered modal — no pending request to retry, just close
+      resolveRef.current?.(null);
     }
-  }, []);
+  }, [clearMfaChallenge]);
 
   const handleCancel = useCallback(async () => {
     setMfaState(null);
+    clearMfaChallenge();
     rejectRef.current?.(new Error('MFA cancelled'));
     await logout();
-  }, [logout]);
+  }, [logout, clearMfaChallenge]);
 
   return (
     <MFAGateContext.Provider value={{ secureCall }}>
@@ -88,83 +95,81 @@ export function useMFAGate() {
   return ctx;
 }
 
-// ── Inline TOTP Modal ─────────────────────────────────────────────────────────
+// ── TOTP / OTP Modal ──────────────────────────────────────────────────────────
 
 function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
-  const [code, setCode] = useState('');
+  const [code, setCode]       = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [timeLeft, setTimeLeft] = useState(challenge?.ttl_seconds || 300);
+  const [error, setError]     = useState('');
+  const ttl = challenge?.ttl_seconds || 300;
+  const [timeLeft, setTimeLeft] = useState(ttl);
 
-  const method = challenge?.method || 'totp';
-  const sessionId = challenge?.session_id || pendingError?.data?.challenge?.session_id || '';
+  const method    = challenge?.method || 'totp';
+  const sessionId = challenge?.session_id
+    || pendingError?.data?.challenge?.session_id
+    || '';
 
-  // Countdown timer
-  useState(() => {
+  // Countdown
+  useEffect(() => {
     if (timeLeft <= 0) return;
     const t = setInterval(() => setTimeLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
-  });
+  }, []);
 
-  const formatTime = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  const fmt = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (code.replace(/\s/g, '').length < 6) {
-      setError('Enter a 6-digit code');
-      return;
-    }
+    const clean = code.replace(/\s/g, '');
+    if (clean.length < 6) { setError('Enter a 6-digit code'); return; }
     setError('');
     setLoading(true);
     try {
       if (method === 'totp') {
-        await mfaApi.verifyTotp(code.trim(), sessionId, false);
+        await mfaApi.verifyTotp(clean, sessionId, false);
       } else {
-        await mfaApi.verifyOtp(code.trim(), sessionId);
+        await mfaApi.verifyOtp(clean, sessionId);
       }
       await onVerified(pendingError);
     } catch (err) {
-      setError(err.data?.detail || 'Invalid code. Please try again.');
+      setError(err?.data?.detail || 'Invalid code — please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    /* Full-screen dim overlay */
     <div style={{
       position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.75)',
-      backdropFilter: 'blur(8px)',
+      background: 'rgba(0,0,0,0.78)',
+      backdropFilter: 'blur(12px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 16,
+      animation: 'fadeIn 0.2s ease',
     }}>
       <div style={{
         background: 'var(--surface)',
         border: '1px solid var(--border)',
-        borderRadius: 16,
-        padding: 32,
-        width: '100%',
-        maxWidth: 420,
-        boxShadow: '0 25px 60px rgba(0,0,0,0.5)',
+        borderRadius: 18, padding: 32,
+        width: '100%', maxWidth: 420,
+        boxShadow: '0 30px 70px rgba(0,0,0,0.55)',
         position: 'relative',
       }}>
         {/* Close */}
         <button onClick={onCancel} style={{
           position: 'absolute', top: 16, right: 16,
           background: 'transparent', border: 'none',
-          color: 'var(--text-muted)', cursor: 'pointer', padding: 4,
+          color: 'var(--text-muted)', cursor: 'pointer',
         }}>
           <X size={18} />
         </button>
 
-        {/* Icon + title */}
+        {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
           <div style={{
-            width: 48, height: 48, borderRadius: 12,
+            width: 50, height: 50, borderRadius: 14,
             background: 'linear-gradient(135deg, #f59e0b, #d97706)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexShrink: 0,
           }}>
             <Lock size={22} color="white" strokeWidth={1.5} />
           </div>
@@ -173,7 +178,7 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
               Security Verification Required
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-              Unusual activity detected — please verify your identity
+              Unusual activity detected — verify your identity
             </div>
           </div>
         </div>
@@ -189,19 +194,19 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
           <KeyRound size={15} color="#3b82f6" />
           <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
             {method === 'totp'
-              ? 'Enter the code from your Authenticator App'
+              ? 'Open your Authenticator App and enter the 6-digit code'
               : 'Enter the 6-digit code sent to your email'}
           </span>
         </div>
 
-        {/* Timer */}
+        {/* Countdown */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6,
           color: timeLeft <= 30 ? '#ef4444' : 'var(--text-muted)',
           fontSize: 12, marginBottom: 16,
         }}>
           <Clock size={13} />
-          {timeLeft > 0 ? `Expires in ${formatTime(timeLeft)}` : 'Code expired — cancel and retry'}
+          {timeLeft > 0 ? `Code expires in ${fmt(timeLeft)}` : 'Code expired — close and retry'}
         </div>
 
         <form onSubmit={handleSubmit}>
@@ -212,13 +217,13 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
             inputMode="numeric"
             maxLength={8}
             value={code}
-            onChange={e => setCode(e.target.value.replace(/\s/g, ''))}
+            onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
             placeholder="000000"
             disabled={timeLeft <= 0}
             style={{
               textAlign: 'center',
-              fontSize: 28,
-              letterSpacing: '0.4em',
+              fontSize: 30,
+              letterSpacing: '0.45em',
               fontFamily: 'monospace',
               padding: '14px',
               marginBottom: 12,
@@ -230,8 +235,7 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
               background: 'rgba(239,68,68,0.1)',
               border: '1px solid rgba(239,68,68,0.3)',
               borderRadius: 8, padding: '10px 12px',
-              color: '#ef4444', fontSize: 13,
-              marginBottom: 12,
+              color: '#ef4444', fontSize: 13, marginBottom: 12,
             }}>
               {error}
             </div>
@@ -241,9 +245,9 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
             type="submit"
             className="btn btn-primary"
             disabled={loading || timeLeft <= 0}
-            style={{ width: '100%', justifyContent: 'center', padding: 13 }}
+            style={{ width: '100%', justifyContent: 'center', padding: 13, fontSize: 14 }}
           >
-            {loading ? 'Verifying…' : 'Verify & Continue →'}
+            {loading ? 'Verifying…' : '✓ Verify & Continue'}
           </button>
 
           <button

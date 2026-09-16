@@ -208,4 +208,86 @@ async def simulate(req: SimulateRequest):
             await store.add_alert(alert)
             log_decision(logger, alert)
 
-    return {"scenario": req.scenario, "identity_id": req.identity_id, "count": count, "tier": last_decision.tier if last_decision else "allow", "results": results}
+        tier = last_decision.tier
+        reason = (last_decision.reasons[0].code if last_decision.reasons else "anomaly_detected")
+
+        # ── REVOKE: actually kick the student out via SSE ──────────────────────
+        if tier == "revoke":
+            from app.services.session_service import revoke_all_sessions_and_broadcast
+            await revoke_all_sessions_and_broadcast(
+                identity_id=req.identity_id,
+                reason=reason,
+                risk_score=last_decision.risk_score,
+                triggered_by="simulate",
+                store=store,
+            )
+            logger.info(f"[simulate] REVOKE SSE broadcast fired for identity={req.identity_id}")
+
+        # ── RESTRICT: push amber warning overlay to that student's browser ─────
+        elif tier == "restrict":
+            from app.services.sse_manager import get_sse_manager
+            sse = get_sse_manager()
+            restrict_msg = (
+                last_decision.reasons[0].message
+                if last_decision.reasons
+                else "Unusual activity detected. Access temporarily restricted."
+            )
+            await sse.broadcast_event(
+                identity_id=req.identity_id,
+                event_name="session_restricted",
+                data={
+                    "identity_id": req.identity_id,
+                    "reason": reason,
+                    "message": restrict_msg,
+                    "risk_score": last_decision.risk_score,
+                },
+            )
+            logger.info(f"[simulate] RESTRICT SSE broadcast fired for identity={req.identity_id}")
+
+        # ── STEP_UP: store a pending MFA challenge so next request prompts TOTP ─
+        elif tier == "step_up":
+            enrolled = await store.get_mfa_enrollment(req.identity_id)
+            mfa_method = "totp" if enrolled else (last_decision.mfa_method or "email_otp")
+            # Mark this identity as needing step_up — gateway will enforce on next request
+            await store.set_risk_state(req.identity_id, {
+                **last_decision.model_dump(mode="json"),
+                "pending_step_up": True,
+                "pending_mfa_method": mfa_method,
+            })
+            # Also push an SSE event so the frontend shows a TOTP challenge immediately
+            from app.services.sse_manager import get_sse_manager
+            from app.services.mfa_service import generate_email_otp
+            sse = get_sse_manager()
+            challenge_data: dict = {
+                "method": mfa_method,
+                "ttl_seconds": 300,
+                "session_id": f"sim_{req.identity_id}",
+            }
+            if mfa_method == "email_otp":
+                try:
+                    otp_result = await generate_email_otp(
+                        req.identity_id, f"sim_{req.identity_id}", store
+                    )
+                    challenge_data.update(otp_result)
+                except Exception:
+                    pass
+            await sse.broadcast_event(
+                identity_id=req.identity_id,
+                event_name="mfa_challenge",
+                data={
+                    "identity_id": req.identity_id,
+                    "challenge": challenge_data,
+                    "reason": reason,
+                    "risk_score": last_decision.risk_score,
+                },
+            )
+            logger.info(f"[simulate] STEP_UP MFA challenge broadcast for identity={req.identity_id}  method={mfa_method}")
+
+    return {
+        "scenario": req.scenario,
+        "identity_id": req.identity_id,
+        "count": count,
+        "tier": last_decision.tier if last_decision else "allow",
+        "results": results,
+    }
+
