@@ -147,7 +147,7 @@ async def simulate(req: SimulateRequest):
     count = max(1, min(req.count, 5000))
 
     if req.scenario == "frequency_spike":
-        await prime_frequency_spike(store, req.identity_id, n=count)
+        await prime_frequency_spike(store, req.identity_id, n=max(count, 35))
 
     # Scenarios that should NOT learn into the baseline — otherwise repeating
     # an attack demo would teach the engine that the attack is "normal",
