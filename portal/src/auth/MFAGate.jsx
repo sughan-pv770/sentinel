@@ -108,6 +108,7 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
   const sessionId = challenge?.session_id
     || pendingError?.data?.challenge?.session_id
     || '';
+  const devOtp    = challenge?._dev_otp || null; // only present in dev mode
 
   // Countdown
   useEffect(() => {
@@ -198,6 +199,30 @@ function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
               : 'Enter the 6-digit code sent to your email'}
           </span>
         </div>
+
+        {/* DEV MODE: show OTP inline so you don't need to check server logs */}
+        {devOtp && (
+          <div style={{
+            background: 'rgba(234,179,8,0.15)',
+            border: '1px solid rgba(234,179,8,0.4)',
+            borderRadius: 10, padding: '12px 16px',
+            marginBottom: 16,
+            textAlign: 'center',
+          }}>
+            <div style={{ fontSize: 11, color: '#ca8a04', fontWeight: 600, marginBottom: 6, letterSpacing: '0.05em' }}>
+              🔧 DEV MODE — Your OTP Code
+            </div>
+            <div style={{
+              fontSize: 32, fontFamily: 'monospace', letterSpacing: '0.4em',
+              fontWeight: 700, color: '#fbbf24',
+            }}>
+              {devOtp}
+            </div>
+            <div style={{ fontSize: 11, color: '#ca8a04', marginTop: 4 }}>
+              (This box is hidden in production)
+            </div>
+          </div>
+        )}
 
         {/* Countdown */}
         <div style={{
