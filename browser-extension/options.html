@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SentinelX Settings</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d1a;color:#fff;padding:32px;max-width:560px;margin:0 auto}
+  h1{font-size:20px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+  .sub{font-size:13px;color:rgba(255,255,255,.4);margin-bottom:28px}
+  .section{margin-bottom:28px}
+  .section-title{font-size:11px;font-weight:600;color:rgba(255,255,255,.4);letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px}
+  .field{margin-bottom:14px}
+  label{display:block;font-size:13px;font-weight:500;color:rgba(255,255,255,.75);margin-bottom:6px}
+  .hint{font-size:11px;color:rgba(255,255,255,.3);margin-top:4px}
+  input[type=text],input[type=url]{
+    width:100%;padding:10px 13px;
+    background:rgba(255,255,255,.05);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:9px;color:#fff;font-size:13px;outline:none;
+  }
+  input[type=text]:focus,input[type=url]:focus{border-color:#6366f1;box-shadow:0 0 0 3px rgba(99,102,241,.2)}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:10px;margin-bottom:8px}
+  .toggle-info .toggle-label{font-size:13px;font-weight:500;color:rgba(255,255,255,.85)}
+  .toggle-info .toggle-desc{font-size:11px;color:rgba(255,255,255,.35);margin-top:2px}
+  .switch{position:relative;width:40px;height:22px;flex-shrink:0}
+  .switch input{display:none}
+  .slider{position:absolute;inset:0;background:rgba(255,255,255,.1);border-radius:11px;cursor:pointer;transition:.3s}
+  .slider:before{content:'';position:absolute;width:16px;height:16px;background:#fff;border-radius:50%;top:3px;left:3px;transition:.3s}
+  input:checked+.slider{background:#6366f1}
+  input:checked+.slider:before{transform:translateX(18px)}
+  .btn-row{display:flex;gap:10px;margin-top:24px}
+  .btn{padding:11px 20px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:none}
+  .btn-primary{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;box-shadow:0 4px 15px rgba(99,102,241,.3)}
+  .btn-secondary{background:rgba(255,255,255,.07);color:rgba(255,255,255,.7);border:1px solid rgba(255,255,255,.1)}
+  #saved-msg{font-size:12px;color:#4ade80;opacity:0;transition:.3s}
+  #saved-msg.show{opacity:1}
+  .ping-result{font-size:12px;margin-top:8px;padding:8px 12px;border-radius:8px}
+  .ping-ok{background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.2)}
+  .ping-fail{background:rgba(239,68,68,.1);color:#f87171;border:1px solid rgba(239,68,68,.2)}
+</style>
+</head>
+<body>
+
+<h1>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+  </svg>
+  SentinelX Settings
+</h1>
+<p class="sub">Configure your security gateway connection and notification preferences.</p>
+
+<!-- Gateway -->
+<div class="section">
+  <div class="section-title">Gateway Connection</div>
+  <div class="field">
+    <label>Gateway URL</label>
+    <input type="url" id="gateway-url" placeholder="http://localhost:8080">
+    <div class="hint">URL of your SentinelX gateway server. Default: http://localhost:8080</div>
+    <div id="ping-result"></div>
+  </div>
+  <button class="btn btn-secondary" id="test-connection">Test Connection</button>
+</div>
+
+<!-- Toggles -->
+<div class="section">
+  <div class="section-title">Protection</div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="toggle-label">Enable SentinelX</div>
+      <div class="toggle-desc">Master switch — monitors sessions on all pages</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="enabled"><span class="slider"></span></label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="toggle-label">Notify on Session Revoke</div>
+      <div class="toggle-desc">Browser notification when your session is terminated</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="notify-revoke"><span class="slider"></span></label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="toggle-label">Notify on Restriction</div>
+      <div class="toggle-desc">Browser notification when access is restricted</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="notify-restrict"><span class="slider"></span></label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-info">
+      <div class="toggle-label">Notify on MFA Challenge</div>
+      <div class="toggle-desc">Browser notification when identity verification is required</div>
+    </div>
+    <label class="switch"><input type="checkbox" id="notify-stepup"><span class="slider"></span></label>
+  </div>
+</div>
+
+<div class="btn-row">
+  <button class="btn btn-primary" id="save-btn">Save Settings</button>
+  <span id="saved-msg">✓ Saved</span>
+</div>
+
+<script src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SentinelX</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 300px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d0d1a;
+    color: #fff;
+    min-height: 200px;
+  }
+
+  /* Header */
+  .header {
+    padding: 16px 16px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .logo {
+    width: 32px; height: 32px; border-radius: 9px;
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 12px rgba(99,102,241,0.4);
+    flex-shrink: 0;
+  }
+  .logo svg { width: 16px; height: 16px; }
+  .header-text .name { font-size: 14px; font-weight: 700; color: #fff; }
+  .header-text .sub  { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 1px; }
+
+  /* Status pill */
+  .status-section { padding: 14px 16px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid;
+    margin-bottom: 10px;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    animation: pulse-dot 2s ease infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .status-label { font-size: 13px; font-weight: 600; flex: 1; }
+  .status-sub   { font-size: 11px; opacity: 0.55; margin-top: 2px; }
+
+  /* Session card */
+  .session-card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;
+  }
+  .session-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .session-row:last-child { margin-bottom: 0; }
+  .session-key { font-size: 11px; color: rgba(255,255,255,0.4); }
+  .session-val { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.85); font-family: monospace; }
+
+  /* Risk bar */
+  .risk-bar-wrap { height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .risk-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+
+  /* Buttons */
+  .actions { padding: 0 16px 14px; display: flex; gap: 6px; }
+  .btn {
+    flex: 1; padding: 8px; border: none; border-radius: 8px;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg,#6366f1,#4f46e5);
+    color: #fff; box-shadow: 0 3px 10px rgba(99,102,241,0.3);
+  }
+  .btn-secondary {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.09);
+  }
+
+  /* Footer */
+  .footer {
+    padding: 10px 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .conn-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .footer-text { font-size: 10px; color: rgba(255,255,255,0.3); }
+  .settings-link { font-size: 11px; color: rgba(99,102,241,0.8); cursor: pointer; text-decoration: none; }
+  .settings-link:hover { color: #a5b4fc; }
+
+  .no-session { padding: 20px 16px; text-align: center; }
+  .no-session p { font-size: 12px; color: rgba(255,255,255,0.35); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+    </svg>
+  </div>
+  <div class="header-text">
+    <div class="name">SentinelX</div>
+    <div class="sub">Security Gateway</div>
+  </div>
+</div>
+
+<!-- Status -->
+<div class="status-section">
+  <div id="status-pill" class="status-pill" style="border-color: rgba(34,197,94,0.3); background: rgba(34,197,94,0.06);">
+    <div id="status-dot" class="status-dot" style="background: #22c55e;"></div>
+    <div>
+      <div id="status-label" class="status-label" style="color:#4ade80;">Monitoring Active</div>
+      <div id="status-sub" class="status-sub">Your session is being protected</div>
+    </div>
+  </div>
+
+  <!-- Session info card -->
+  <div id="session-card" class="session-card" style="display:none;">
+    <div class="session-row">
+      <span class="session-key">Identity</span>
+      <span id="sx-identity" class="session-val">—</span>
+    </div>
+    <div class="session-row">
+      <span class="session-key">Host</span>
+      <span id="sx-host" class="session-val">—</span>
+    </div>
+    <div class="session-row">
+      <span class="session-key">Risk Score</span>
+      <span id="sx-risk" class="session-val">0/100</span>
+    </div>
+    <div class="risk-bar-wrap">
+      <div id="sx-risk-bar" class="risk-bar-fill" style="width:0%; background: linear-gradient(90deg,#22c55e,#4ade80);"></div>
+    </div>
+  </div>
+
+  <!-- No active session -->
+  <div id="no-session" class="no-session">
+    <p>No active protected session detected on this tab.<br><br>
+    Log into a portal with SentinelX to start monitoring.</p>
+  </div>
+</div>
+
+<!-- Actions -->
+<div class="actions">
+  <button class="btn btn-primary" id="open-portal">Open Portal</button>
+  <button class="btn btn-secondary" id="open-settings">⚙ Settings</button>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div style="display:flex;align-items:center;gap:5px;">
+    <div id="conn-indicator" class="conn-dot" style="background:#22c55e;"></div>
+    <span class="footer-text" id="conn-text">Gateway connected</span>
+  </div>
+  <a class="settings-link" id="gateway-link" href="#" target="_blank">Gateway Dashboard</a>
+</div>
+
+<script src="popup.js"></script>
+</body>
+</html>

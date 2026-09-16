@@ -1,278 +1,489 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from './AuthContext';
-import { Shield, QrCode, Copy, Check, ArrowLeft } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-
 /**
- * MFA Enrollment Page — TOTP setup flow.
+ * MFAEnrollPage — TOTP setup with QR code scan.
  *
- * Steps:
- *   1. Generate TOTP secret (GET QR code + secret + backup codes)
- *   2. User scans QR code with authenticator app
- *   3. User enters first valid TOTP code to confirm enrollment
+ * Flow:
+ *  Step 1 — Show QR code → user scans with Google Authenticator / Authy / any TOTP app
+ *  Step 2 — Live 30-second window ring + 6-digit verification (confirm the app is linked)
+ *  Step 3 — Done: show backup codes, mark enrolled
+ *
+ * The TOTP standard (RFC 6238): every 30 seconds, the authenticator derives
+ * a new 6-digit code from the shared secret + current Unix time ÷ 30.
+ * User just enters whatever code their app is currently showing.
  */
-export default function MFAEnrollPage() {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [step, setStep] = useState(1); // 1=setup, 2=verify, 3=done
-  const [enrollment, setEnrollment] = useState(null);
-  const [verifyCode, setVerifyCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [copiedSecret, setCopiedSecret] = useState(false);
-  const [copiedBackup, setCopiedBackup] = useState(false);
+import { useState, useEffect, useRef } from 'react';
+import { useAuth } from './AuthContext';
+import { Shield, Copy, Check, ArrowLeft, ArrowRight, Download, RefreshCw } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { mfa as mfaApi } from '../api/client';
 
-  // Fetch enrollment on mount
+// ── Live TOTP window ring (pure math — no backend needed) ─────────────────────
+// Returns seconds remaining in the current 30-second TOTP window.
+function useTotpWindow() {
+  const [secsLeft, setSecsLeft] = useState(() => 30 - (Math.floor(Date.now() / 1000) % 30));
   useEffect(() => {
-    loadEnrollment();
+    const tick = () => setSecsLeft(30 - (Math.floor(Date.now() / 1000) % 30));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
   }, []);
+  return secsLeft;
+}
 
-  const loadEnrollment = async () => {
-    setLoading(true);
-    try {
-      const { mfa } = await import('../api/client');
-      const data = await mfa.enrollTotp();
-      setEnrollment(data);
-      if (data.already_enrolled) {
-        setStep(3);
-      }
-    } catch (err) {
-      setError('Failed to generate TOTP enrollment. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerify = async (e) => {
-    e.preventDefault();
-    if (verifyCode.length < 6) {
-      setError('Enter the 6-digit code from your authenticator app');
-      return;
-    }
-    setError('');
-    setLoading(true);
-    try {
-      const { mfa } = await import('../api/client');
-      await mfa.verifyTotp(verifyCode, `enroll_${user.identity_id}`, false);
-      setStep(3);
-    } catch (err) {
-      setError(err.data?.detail || 'Invalid code. Make sure you scanned the QR code correctly.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyToClipboard = async (text, setCopied) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback
-    }
-  };
-
-  if (loading && !enrollment) {
-    return (
-      <div className="login-page">
-        <div className="loading-center"><div className="loading-spinner" /></div>
-      </div>
-    );
-  }
+// SVG ring countdown — shows the current TOTP window visually
+function TotpWindowRing({ size = 64, strokeWidth = 4 }) {
+  const secsLeft = useTotpWindow();
+  const r = (size - strokeWidth * 2) / 2;
+  const circ = 2 * Math.PI * r;
+  const pct = secsLeft / 30;
+  const color = secsLeft <= 5 ? '#ef4444' : secsLeft <= 10 ? '#f59e0b' : '#6366f1';
 
   return (
-    <div className="login-page">
-      <div className="login-card animate-fade-in" style={{ maxWidth: 480 }}>
-        {/* Header */}
-        <div className="login-logo">
-          <div className="login-logo-icon" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
-            <Shield size={24} color="white" strokeWidth={1.5} />
-          </div>
-          <div className="login-logo-text">
-            <h1 style={{ fontSize: '20px' }}>
-              {step === 3 ? 'MFA Enabled ✓' : 'Set Up Two-Factor Authentication'}
-            </h1>
-            <span>{step === 3 ? 'Your account is now secured with TOTP' : 'Protect your account with an authenticator app'}</span>
-          </div>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size/2} cy={size/2} r={r}
+          fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={strokeWidth} />
+        <circle cx={size/2} cy={size/2} r={r}
+          fill="none" stroke={color} strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={circ * (1 - pct)}
+          style={{ transition: 'stroke-dashoffset 0.9s linear, stroke 0.3s ease' }}
+        />
+      </svg>
+      <div style={{
+        fontSize: 11, fontWeight: 600, color,
+        marginTop: -size - 2, marginBottom: size - 4,
+        fontFamily: 'monospace',
+      }}>
+        {secsLeft}s
+      </div>
+    </div>
+  );
+}
 
-        {/* Step 1: QR Code + Secret */}
-        {step === 1 && enrollment && !enrollment.already_enrolled && (
-          <>
-            {/* QR Code area */}
+export default function MFAEnrollPage() {
+  const { user } = useAuth();
+  const navigate  = useNavigate();
+  const [step, setStep]         = useState(1);   // 1=QR, 2=verify, 3=done
+  const [enrollment, setEnroll] = useState(null);
+  const [digits, setDigits]     = useState(Array(6).fill(''));
+  const [loading, setLoading]   = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]       = useState('');
+  const [shake, setShake]       = useState(false);
+  const [copied, setCopied]     = useState('');
+  const inputRefs = useRef([]);
+
+  useEffect(() => { fetchEnrollment(); }, []);
+  useEffect(() => { if (step === 2) setTimeout(() => inputRefs.current[0]?.focus(), 100); }, [step]);
+
+  const fetchEnrollment = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await mfaApi.enrollTotp();
+      setEnroll(data);
+      if (data.already_enrolled) setStep(3);
+    } catch {
+      setError('Could not load enrollment. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyText = async (text, key) => {
+    await navigator.clipboard.writeText(text).catch(() => {});
+    setCopied(key);
+    setTimeout(() => setCopied(''), 2000);
+  };
+
+  const downloadBackupCodes = () => {
+    const txt = [
+      'SentinelX — TOTP Backup Codes',
+      `Account: ${user?.identity_id}`,
+      `Generated: ${new Date().toLocaleString()}`,
+      '',
+      'Each code can only be used once.',
+      '',
+      ...(enrollment?.backup_codes || []),
+    ].join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([txt], { type: 'text/plain' }));
+    a.download = 'sentinelx-backup-codes.txt';
+    a.click();
+  };
+
+  // 6-box digit entry
+  const handleDigit = (idx, val) => {
+    const ch = val.replace(/\D/g, '').slice(-1);
+    const next = [...digits]; next[idx] = ch; setDigits(next); setError('');
+    if (ch && idx < 5) inputRefs.current[idx + 1]?.focus();
+    if (ch && next.every(d => d)) submitVerify(next.join(''));
+  };
+  const handleKeyDown = (idx, e) => {
+    if (e.key === 'Backspace' && !digits[idx] && idx > 0) inputRefs.current[idx - 1]?.focus();
+    if (e.key === 'ArrowLeft'  && idx > 0) inputRefs.current[idx - 1]?.focus();
+    if (e.key === 'ArrowRight' && idx < 5) inputRefs.current[idx + 1]?.focus();
+  };
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const paste = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+    if (!paste) return;
+    const next = Array(6).fill('');
+    paste.split('').forEach((c, i) => { next[i] = c; });
+    setDigits(next);
+    inputRefs.current[Math.min(paste.length - 1, 5)]?.focus();
+    if (paste.length === 6) submitVerify(paste);
+  };
+
+  const submitVerify = async (code) => {
+    if (submitting) return;
+    setSubmitting(true); setError('');
+    try {
+      await mfaApi.verifyTotp(code, 'enroll', true);
+      setStep(3);
+    } catch (err) {
+      setError(err?.data?.detail || 'Incorrect code. Check your authenticator app and try again.');
+      setShake(true); setTimeout(() => setShake(false), 600);
+      setDigits(Array(6).fill(''));
+      setTimeout(() => inputRefs.current[0]?.focus(), 50);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Loading ────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <div style={{ width: 40, height: 40, border: '3px solid rgba(99,102,241,0.2)', borderTopColor: '#6366f1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+    </div>
+  );
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'var(--bg, #0d0d1a)',
+      padding: 24,
+    }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes shake {
+          0%,100% { transform: translateX(0); }
+          20% { transform: translateX(-8px); }
+          40% { transform: translateX(8px); }
+          60% { transform: translateX(-5px); }
+          80% { transform: translateX(5px); }
+        }
+        .enroll-shake { animation: shake 0.55s ease; }
+        .mfa-digit-enroll {
+          width: 46px; height: 56px;
+          background: rgba(255,255,255,0.05);
+          border: 1.5px solid rgba(255,255,255,0.1);
+          border-radius: 10px;
+          font-size: 22px; font-weight: 700; font-family: monospace;
+          color: #fff; text-align: center;
+          outline: none; caret-color: transparent;
+          transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .mfa-digit-enroll:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+        .mfa-digit-enroll.filled { border-color: rgba(99,102,241,0.5); }
+      `}</style>
+
+      <div style={{ maxWidth: 460, width: '100%' }}>
+        {/* Back link */}
+        <Link to="/student" style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          color: 'rgba(255,255,255,0.4)', fontSize: 13, textDecoration: 'none',
+          marginBottom: 24,
+        }}>
+          <ArrowLeft size={14} /> Back to dashboard
+        </Link>
+
+        {/* Card */}
+        <div style={{
+          background: 'var(--surface, #1e1e2e)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: 20,
+          overflow: 'hidden',
+          boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
+        }}>
+          {/* Progress bar */}
+          <div style={{ height: 3, background: 'rgba(255,255,255,0.05)' }}>
             <div style={{
-              background: 'white', borderRadius: '12px', padding: '20px',
-              textAlign: 'center', marginBottom: '16px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}>
-                <QrCode size={20} color="#333" />
-                <span style={{ fontSize: '13px', color: '#333', fontWeight: 600 }}>
-                  Scan with your authenticator app
-                </span>
-              </div>
-              {/* QR code would be rendered here from provisioning_uri */}
+              height: '100%',
+              width: step === 1 ? '33%' : step === 2 ? '66%' : '100%',
+              background: 'linear-gradient(90deg,#6366f1,#8b5cf6)',
+              transition: 'width 0.5s ease',
+            }} />
+          </div>
+
+          <div style={{ padding: 32 }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
               <div style={{
-                background: '#f0f0f0', borderRadius: 8, padding: '40px 20px',
-                fontFamily: 'monospace', fontSize: '10px', wordBreak: 'break-all',
-                color: '#666',
+                width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 6px 20px rgba(99,102,241,0.3)',
               }}>
-                {enrollment.provisioning_uri}
+                <Shield size={20} color="white" strokeWidth={1.5} />
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>
+                  {step === 1 ? 'Set Up Authenticator App' :
+                   step === 2 ? 'Confirm Your Code' : 'Authenticator Linked!'}
+                </div>
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>
+                  Step {Math.min(step, 3)} of 3
+                </div>
               </div>
             </div>
 
-            {/* Manual entry secret */}
-            <div style={{
-              background: 'rgba(59, 130, 246, 0.1)',
-              border: '1px solid rgba(59, 130, 246, 0.2)',
-              borderRadius: '10px', padding: '14px 16px', marginBottom: '16px',
-            }}>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Or enter this secret manually:
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <code style={{
-                  flex: 1, fontSize: '14px', letterSpacing: '0.1em',
-                  fontWeight: 600, color: 'var(--text-primary)',
-                }}>
-                  {enrollment.secret}
-                </code>
-                <button
-                  onClick={() => copyToClipboard(enrollment.secret, setCopiedSecret)}
-                  style={{
-                    background: 'transparent', border: 'none', cursor: 'pointer',
-                    color: 'var(--text-muted)', padding: 4,
-                  }}
-                >
-                  {copiedSecret ? <Check size={16} color="#10b981" /> : <Copy size={16} />}
-                </button>
-              </div>
-            </div>
+            {/* ── STEP 1: QR Code ─────────────────────────────────────────── */}
+            {step === 1 && enrollment && (
+              <div>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, marginBottom: 20 }}>
+                  Open <strong style={{ color: '#fff' }}>Google Authenticator</strong>, <strong style={{ color: '#fff' }}>Authy</strong>, or any TOTP app,
+                  then scan this QR code to link your account.
+                </p>
 
-            {/* Backup codes */}
-            {enrollment.backup_codes && (
-              <div style={{
-                background: 'rgba(245, 158, 11, 0.1)',
-                border: '1px solid rgba(245, 158, 11, 0.3)',
-                borderRadius: '10px', padding: '14px 16px', marginBottom: '20px',
-              }}>
+                {/* QR Code */}
                 <div style={{
-                  fontSize: '13px', fontWeight: 600,
-                  color: '#f59e0b', marginBottom: 8,
+                  background: '#fff', borderRadius: 14,
+                  padding: 12, display: 'inline-block',
+                  marginBottom: 20, display: 'flex',
+                  justifyContent: 'center',
                 }}>
-                  ⚠️ Save Your Backup Codes
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: 10 }}>
-                  These codes can be used if you lose access to your authenticator app.
-                  Each code works once. Store them securely.
-                </div>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
-                  gap: 6, fontFamily: 'monospace', fontSize: '12px',
-                }}>
-                  {enrollment.backup_codes.map((code, i) => (
-                    <div key={i} style={{
-                      background: 'rgba(0,0,0,0.2)', padding: '4px 8px',
-                      borderRadius: 4, textAlign: 'center', color: 'var(--text-primary)',
+                  {enrollment.qr_code_png ? (
+                    <img
+                      src={enrollment.qr_code_png}
+                      alt="TOTP QR Code"
+                      style={{ width: 180, height: 180, display: 'block', imageRendering: 'pixelated' }}
+                    />
+                  ) : (
+                    <div style={{
+                      width: 180, height: 180, background: '#f1f5f9',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      flexDirection: 'column', gap: 8, color: '#64748b', fontSize: 12,
                     }}>
-                      {code}
+                      <span>QR unavailable</span>
+                      <span>Use manual entry below</span>
                     </div>
-                  ))}
+                  )}
                 </div>
+
+                {/* Manual entry secret */}
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginBottom: 8, fontWeight: 500 }}>
+                    CAN'T SCAN? ENTER THIS KEY MANUALLY
+                  </div>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 10, padding: '10px 14px',
+                  }}>
+                    <code style={{
+                      flex: 1, fontFamily: 'monospace', fontSize: 14,
+                      letterSpacing: '0.12em', color: '#a5b4fc',
+                      wordBreak: 'break-all',
+                    }}>
+                      {enrollment.secret}
+                    </code>
+                    <button onClick={() => copyText(enrollment.secret, 'secret')} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: copied === 'secret' ? '#22c55e' : 'rgba(255,255,255,0.4)',
+                      padding: 4, flexShrink: 0,
+                    }}>
+                      {copied === 'secret' ? <Check size={15} /> : <Copy size={15} />}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>
+                    Account: <strong style={{ color: 'rgba(255,255,255,0.4)' }}>{user?.name}</strong>
+                    {' · '}Issuer: SentinelX
+                    {' · '}Time-based · 30-second window
+                  </div>
+                </div>
+
                 <button
-                  onClick={() => copyToClipboard(enrollment.backup_codes.join('\n'), setCopiedBackup)}
+                  onClick={() => setStep(2)}
                   style={{
-                    marginTop: 8, fontSize: '11px', background: 'transparent',
-                    border: '1px solid var(--border)', borderRadius: 6,
-                    padding: '4px 10px', cursor: 'pointer', color: 'var(--text-secondary)',
+                    width: '100%', padding: 13,
+                    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                    border: 'none', borderRadius: 12,
+                    color: '#fff', fontSize: 14, fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    boxShadow: '0 4px 15px rgba(99,102,241,0.3)',
                   }}
                 >
-                  {copiedBackup ? '✓ Copied' : 'Copy all codes'}
+                  I've scanned the code <ArrowRight size={16} />
                 </button>
               </div>
             )}
 
-            <button
-              className="btn btn-primary"
-              onClick={() => setStep(2)}
-              style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
-            >
-              I've saved my backup codes — Continue →
-            </button>
-          </>
-        )}
+            {/* ── STEP 2: Verify first code ──────────────────────────────── */}
+            {step === 2 && (
+              <div>
+                <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                  {/* Live TOTP window ring */}
+                  <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+                    <TotpWindowRing size={72} strokeWidth={5} />
+                  </div>
+                  <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', lineHeight: 1.6, margin: 0 }}>
+                    Open your authenticator app and enter the <strong style={{ color: '#fff' }}>6-digit code</strong> currently displayed.
+                    The ring shows how many seconds until the code refreshes.
+                  </p>
+                </div>
 
-        {/* Step 2: Verify first code */}
-        {step === 2 && (
-          <form onSubmit={handleVerify}>
-            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.6 }}>
-              Enter the 6-digit code currently showing in your authenticator app
-              to confirm enrollment.
-            </p>
-            <input
-              className="input"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              value={verifyCode}
-              onChange={e => setVerifyCode(e.target.value.replace(/\D/g, ''))}
-              placeholder="000000"
-              autoComplete="one-time-code"
-              style={{
-                textAlign: 'center', fontSize: '24px', letterSpacing: '0.3em',
-                fontFamily: 'monospace', padding: '14px', marginBottom: 16,
-              }}
-            />
-            {error && <div className="login-error">{error}</div>}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={loading}
-              style={{ width: '100%', justifyContent: 'center', padding: '12px' }}
-            >
-              {loading ? 'Verifying…' : 'Verify & Enable MFA →'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setStep(1); setError(''); }}
-              style={{
-                width: '100%', marginTop: 10, padding: 10,
-                background: 'transparent', border: '1px solid var(--border)',
-                borderRadius: 8, color: 'var(--text-secondary)',
-                cursor: 'pointer', fontSize: '13px',
-              }}
-            >
-              <ArrowLeft size={14} style={{ verticalAlign: 'middle', marginRight: 6 }} />
-              Back to QR code
-            </button>
-          </form>
-        )}
+                <div className={shake ? 'enroll-shake' : ''}>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
+                    {digits.map((d, i) => (
+                      <input
+                        key={i}
+                        ref={el => inputRefs.current[i] = el}
+                        className={`mfa-digit-enroll${d ? ' filled' : ''}`}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={d}
+                        onChange={e => handleDigit(i, e.target.value)}
+                        onKeyDown={e => handleKeyDown(i, e)}
+                        onPaste={i === 0 ? handlePaste : undefined}
+                        disabled={submitting}
+                        autoComplete="one-time-code"
+                      />
+                    ))}
+                  </div>
+                </div>
 
-        {/* Step 3: Success */}
-        {step === 3 && (
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              width: 64, height: 64, borderRadius: '50%',
-              background: 'rgba(16, 185, 129, 0.15)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 16px',
-            }}>
-              <Check size={32} color="#10b981" />
-            </div>
-            <p style={{ fontSize: '14px', color: 'var(--text-primary)', marginBottom: 8 }}>
-              Two-factor authentication is active.
-            </p>
-            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: 24 }}>
-              You'll be prompted for a code when the security system detects elevated risk.
-            </p>
-            <button
-              className="btn btn-primary"
-              onClick={() => navigate(-1)}
-              style={{ padding: '10px 24px' }}
-            >
-              Done — Return to Dashboard
-            </button>
+                {error && (
+                  <div style={{
+                    fontSize: 13, color: '#f87171', textAlign: 'center',
+                    marginBottom: 12, padding: '8px 12px',
+                    background: 'rgba(239,68,68,0.08)', borderRadius: 8,
+                  }}>
+                    {error}
+                  </div>
+                )}
+
+                <button
+                  onClick={() => submitVerify(digits.join(''))}
+                  disabled={submitting || digits.join('').length < 6}
+                  style={{
+                    width: '100%', padding: 13,
+                    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                    border: 'none', borderRadius: 12,
+                    color: '#fff', fontSize: 14, fontWeight: 600,
+                    cursor: submitting ? 'wait' : 'pointer',
+                    opacity: digits.join('').length < 6 ? 0.5 : 1,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    boxShadow: '0 4px 15px rgba(99,102,241,0.3)',
+                  }}
+                >
+                  {submitting ? 'Verifying…' : 'Confirm & Enable MFA'}
+                </button>
+
+                <button onClick={() => setStep(1)} style={{
+                  width: '100%', marginTop: 10, padding: 11,
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: 12, color: 'rgba(255,255,255,0.4)', fontSize: 13, cursor: 'pointer',
+                }}>
+                  ← Go back to QR code
+                </button>
+              </div>
+            )}
+
+            {/* ── STEP 3: Done + backup codes ───────────────────────────── */}
+            {step === 3 && (
+              <div>
+                <div style={{
+                  textAlign: 'center', marginBottom: 24,
+                  padding: 20, background: 'rgba(34,197,94,0.06)',
+                  border: '1px solid rgba(34,197,94,0.15)', borderRadius: 14,
+                }}>
+                  <div style={{
+                    width: 52, height: 52, borderRadius: 14,
+                    background: 'linear-gradient(135deg,#22c55e,#16a34a)',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    marginBottom: 12,
+                    boxShadow: '0 6px 20px rgba(34,197,94,0.3)',
+                  }}>
+                    <Shield size={24} color="white" strokeWidth={1.5} />
+                  </div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: '#4ade80' }}>
+                    {enrollment?.already_enrolled ? 'Already Enrolled' : 'Authenticator Linked!'}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginTop: 6 }}>
+                    {enrollment?.already_enrolled
+                      ? 'Your account already has TOTP enabled.'
+                      : 'Your account is now protected with TOTP.'}
+                  </div>
+                </div>
+
+                {enrollment?.backup_codes && !enrollment.already_enrolled && (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      marginBottom: 10,
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)' }}>
+                        BACKUP CODES — SAVE THESE NOW
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button onClick={downloadBackupCodes} style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: 'rgba(255,255,255,0.4)', fontSize: 11,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                        }}>
+                          <Download size={12} /> Download
+                        </button>
+                        <button onClick={() => copyText(enrollment.backup_codes.join('\n'), 'backup')} style={{
+                          background: 'none', border: 'none', cursor: 'pointer',
+                          color: copied === 'backup' ? '#22c55e' : 'rgba(255,255,255,0.4)',
+                          fontSize: 11, display: 'flex', alignItems: 'center', gap: 4,
+                        }}>
+                          {copied === 'backup' ? <><Check size={12} /> Copied</> : <><Copy size={12} /> Copy all</>}
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: '1fr 1fr',
+                      gap: 6,
+                    }}>
+                      {enrollment.backup_codes.map((code, i) => (
+                        <div key={i} style={{
+                          fontFamily: 'monospace', fontSize: 13, fontWeight: 600,
+                          padding: '7px 12px', textAlign: 'center',
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          borderRadius: 8, color: 'rgba(255,255,255,0.7)',
+                          letterSpacing: '0.1em',
+                        }}>
+                          {code}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)', marginTop: 8 }}>
+                      Each code can only be used once. Store these somewhere safe — they won't be shown again.
+                    </div>
+                  </div>
+                )}
+
+                <button onClick={() => navigate('/student')} style={{
+                  width: '100%', padding: 13,
+                  background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                  border: 'none', borderRadius: 12,
+                  color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  boxShadow: '0 4px 15px rgba(99,102,241,0.3)',
+                }}>
+                  Return to Dashboard
+                </button>
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

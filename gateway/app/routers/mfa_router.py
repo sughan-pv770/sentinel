@@ -43,14 +43,35 @@ class DeviceTrustRequest(BaseModel):
 async def enroll_totp(current_user: dict = Depends(get_current_user)):
     """
     Generate a TOTP secret and provisioning URI for the authenticated user.
-    The QR code should be rendered from `provisioning_uri`.
-    The `secret` and `backup_codes` are shown ONCE — never retrievable again.
+    Returns a base64 QR PNG so frontend can display with <img src=...>.
+    The secret and backup_codes are shown ONCE — not retrievable again.
     """
     store = get_store()
     result = await mfa_service.generate_totp_enrollment(
         identity_id=current_user["identity_id"],
         store=store,
     )
+    # Embed QR code PNG as base64 for direct <img> rendering
+    if not result.get("already_enrolled") and result.get("provisioning_uri"):
+        try:
+            import qrcode
+            import io
+            import base64
+            qr = qrcode.QRCode(
+                box_size=6, border=2,
+                error_correction=qrcode.constants.ERROR_CORRECT_H,
+            )
+            qr.add_data(result["provisioning_uri"])
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="#1a1a2e", back_color="#ffffff")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            result["qr_code_png"] = (
+                "data:image/png;base64,"
+                + base64.b64encode(buf.getvalue()).decode()
+            )
+        except Exception:
+            pass  # frontend falls back to showing manual secret entry
     return result
 
 
