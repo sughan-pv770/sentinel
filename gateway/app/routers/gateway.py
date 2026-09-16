@@ -120,8 +120,30 @@ async def gateway_proxy(service: str, path: str, request: Request):
             },
         )
 
-    # ── RESTRICT: rate-limit response ─────────────────────────────────────────
+    # ── RESTRICT: SSE warning to that student + 429 to the caller ─────────────
     if decision.tier == "restrict":
+        # Push a non-logout warning overlay only to THIS identity's browser tab
+        from app.services.sse_manager import get_sse_manager
+        sse = get_sse_manager()
+        reason = (decision.reasons[0].code if decision.reasons else "high_risk_activity")
+        restrict_message = (
+            decision.reasons[0].message
+            if decision.reasons
+            else "Unusual activity detected on your account."
+        )
+        import asyncio
+        asyncio.create_task(
+            sse.broadcast_event(
+                identity_id=ctx.identity_id,
+                event_name="session_restricted",
+                data={
+                    "identity_id": ctx.identity_id,
+                    "reason": reason,
+                    "message": restrict_message,
+                    "risk_score": decision.risk_score,
+                },
+            )
+        )
         return JSONResponse(
             status_code=429,
             content={
@@ -134,13 +156,17 @@ async def gateway_proxy(service: str, path: str, request: Request):
 
     # ── STEP_UP: create real MFA challenge ────────────────────────────────────
     if decision.tier == "step_up":
-        mfa_method = decision.mfa_method or "totp"
-        from app.services.mfa_service import generate_email_otp
+        # Check if the user has TOTP enrolled — use it; otherwise email OTP
+        enrolled = await store.get_mfa_enrollment(ctx.identity_id)
+        mfa_method = "totp" if enrolled else (decision.mfa_method or "email_otp")
+
         challenge_data = {"method": mfa_method, "ttl_seconds": 300, "session_id": session_id}
 
         if mfa_method == "email_otp":
+            from app.services.mfa_service import generate_email_otp
             otp_result = await generate_email_otp(ctx.identity_id, session_id, store)
             challenge_data.update(otp_result)
+        # For totp: no server-side token sent — user reads code from their app
 
         return JSONResponse(
             status_code=401,

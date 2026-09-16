@@ -6,6 +6,7 @@ import LoginPage from './auth/LoginPage';
 import RegisterPage from './auth/RegisterPage';
 import MFAEnrollPage from './auth/MFAEnrollPage';
 import DemoToolkit from './components/DemoToolkit';
+import { MFAGateProvider } from './auth/MFAGate';
 
 // Layouts
 import StudentLayout from './layouts/StudentLayout';
@@ -60,6 +61,7 @@ export default function App() {
   return (
     <BrowserRouter basename="/portal">
       <AuthProvider>
+        <MFAGateProvider>
         <Routes>
           <Route path="/" element={<RootRedirect />} />
 
@@ -111,6 +113,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         <DemoToolkit />
+        </MFAGateProvider>
       </AuthProvider>
     </BrowserRouter>
   );

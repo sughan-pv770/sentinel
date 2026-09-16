@@ -112,6 +112,39 @@ class SSEManager:
             except asyncio.QueueFull:
                 pass
 
+    async def broadcast_event(
+        self,
+        identity_id: str,
+        event_name: str,
+        data: dict,
+    ) -> int:
+        """
+        Generic SSE broadcast to all connections for `identity_id`.
+        Used for session_restricted, risk_update, and any future event types.
+        Returns the number of connections notified.
+        """
+        data.setdefault("timestamp", time.time())
+        payload = _format_sse_event(event_name, data)
+
+        async with self._lock:
+            queues = list(self._connections.get(identity_id, []))
+
+        notified = 0
+        for q in queues:
+            try:
+                q.put_nowait(payload)
+                notified += 1
+            except asyncio.QueueFull:
+                logger.warning(
+                    f"SSE queue full for identity={identity_id}, dropping {event_name} event"
+                )
+
+        logger.info(
+            f"SSE broadcast {event_name}  identity={identity_id}  "
+            f"connections_notified={notified}"
+        )
+        return notified
+
     async def event_generator(
         self,
         identity_id: str,
