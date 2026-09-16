@@ -1,40 +1,32 @@
 /**
- * MFAGate — Global MFA interceptor.
+ * MFAGate — Production-grade adaptive MFA interceptor.
  *
- * Shows the TOTP/OTP modal in two ways:
- *  1. Via secureCall(fn) — wraps any API call; if it throws step_up_required
- *     the modal appears and retries the request on success.
- *  2. Via SSE — when the gateway broadcasts an mfa_challenge event (e.g. from
- *     the simulator), AuthContext sets pendingMfaChallenge which triggers the
- *     modal immediately without waiting for the next API call.
+ * UX design:
+ *  - Looks and feels like Duo / Okta / Google's 2-step verification
+ *  - 6 separate digit boxes with auto-advance and auto-submit
+ *  - Soft backdrop blur — the dashboard behind is still visible
+ *  - Triggered by: secureCall(fn) API intercept OR mfa_challenge SSE event
  */
 import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { mfa as mfaApi, retryPendingRequest } from '../api/client';
 import { useAuth } from './AuthContext';
-import { Lock, KeyRound, Clock, X } from 'lucide-react';
+import { ShieldCheck, KeyRound, Clock, ArrowRight, RotateCcw } from 'lucide-react';
 
 const MFAGateContext = createContext(null);
 
 export function MFAGateProvider({ children }) {
   const { logout, pendingMfaChallenge, clearMfaChallenge } = useAuth();
-
-  // State for the modal — either from secureCall or SSE push
   const [mfaState, setMfaState] = useState(null);
-  // { challenge, pendingError? }  pendingError is set only from secureCall
   const resolveRef = useRef(null);
   const rejectRef  = useRef(null);
 
-  // ── Watch for SSE-pushed mfa_challenge (from simulator step_up) ───────────
+  // Watch for SSE-pushed mfa_challenge (simulator step_up)
   useEffect(() => {
     if (pendingMfaChallenge && !mfaState) {
       setMfaState({ challenge: pendingMfaChallenge, pendingError: null });
     }
-  }, [pendingMfaChallenge]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pendingMfaChallenge]); // eslint-disable-line
 
-  /**
-   * secureCall — wraps any API fn.
-   * If it returns step_up_required, shows the MFA modal and retries on success.
-   */
   const secureCall = useCallback(async (fn) => {
     try {
       return await fn();
@@ -54,15 +46,9 @@ export function MFAGateProvider({ children }) {
     setMfaState(null);
     clearMfaChallenge();
     if (pendingError) {
-      // Retry the original blocked request
-      try {
-        const result = await retryPendingRequest(pendingError);
-        resolveRef.current?.(result);
-      } catch (err) {
-        rejectRef.current?.(err);
-      }
+      try { resolveRef.current?.(await retryPendingRequest(pendingError)); }
+      catch (err) { rejectRef.current?.(err); }
     } else {
-      // SSE-triggered modal — no pending request to retry, just close
       resolveRef.current?.(null);
     }
   }, [clearMfaChallenge]);
@@ -95,201 +81,318 @@ export function useMFAGate() {
   return ctx;
 }
 
-// ── TOTP / OTP Modal ──────────────────────────────────────────────────────────
+// ── Production MFA Modal ───────────────────────────────────────────────────────
 
 function MFAModal({ challenge, pendingError, onVerified, onCancel }) {
-  const [code, setCode]       = useState('');
+  const NUM_DIGITS = 6;
+  const [digits, setDigits]   = useState(Array(NUM_DIGITS).fill(''));
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  const [shake, setShake]     = useState(false);
+  const [success, setSuccess] = useState(false);
   const ttl = challenge?.ttl_seconds || 300;
   const [timeLeft, setTimeLeft] = useState(ttl);
+  const inputRefs = useRef([]);
 
   const method    = challenge?.method || 'totp';
-  const sessionId = challenge?.session_id
-    || pendingError?.data?.challenge?.session_id
-    || '';
-  const devOtp    = challenge?._dev_otp || null; // only present in dev mode
+  const sessionId = challenge?.session_id || pendingError?.data?.challenge?.session_id || '';
+  const devOtp    = challenge?._dev_otp || null;
 
-  // Countdown
   useEffect(() => {
     if (timeLeft <= 0) return;
     const t = setInterval(() => setTimeLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, []);
 
+  // Focus first box on mount
+  useEffect(() => { inputRefs.current[0]?.focus(); }, []);
+
   const fmt = s => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
-  const handleSubmit = async (e) => {
+  const handleDigitChange = (idx, val) => {
+    const clean = val.replace(/\D/g, '').slice(-1);
+    const next = [...digits];
+    next[idx] = clean;
+    setDigits(next);
+    setError('');
+    if (clean && idx < NUM_DIGITS - 1) {
+      inputRefs.current[idx + 1]?.focus();
+    }
+    // Auto-submit when all filled
+    if (clean && next.every(d => d !== '')) {
+      submitCode(next.join(''));
+    }
+  };
+
+  const handleKeyDown = (idx, e) => {
+    if (e.key === 'Backspace' && !digits[idx] && idx > 0) {
+      inputRefs.current[idx - 1]?.focus();
+    }
+    if (e.key === 'ArrowLeft' && idx > 0) inputRefs.current[idx - 1]?.focus();
+    if (e.key === 'ArrowRight' && idx < NUM_DIGITS - 1) inputRefs.current[idx + 1]?.focus();
+  };
+
+  const handlePaste = (e) => {
     e.preventDefault();
-    const clean = code.replace(/\s/g, '');
-    if (clean.length < 6) { setError('Enter a 6-digit code'); return; }
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, NUM_DIGITS);
+    if (!pasted) return;
+    const next = Array(NUM_DIGITS).fill('');
+    pasted.split('').forEach((ch, i) => { next[i] = ch; });
+    setDigits(next);
+    inputRefs.current[Math.min(pasted.length, NUM_DIGITS - 1)]?.focus();
+    if (pasted.length === NUM_DIGITS) submitCode(pasted);
+  };
+
+  const submitCode = async (code) => {
+    if (loading || timeLeft <= 0) return;
     setError('');
     setLoading(true);
     try {
       if (method === 'totp') {
-        await mfaApi.verifyTotp(clean, sessionId, false);
+        await mfaApi.verifyTotp(code, sessionId, false);
       } else {
-        await mfaApi.verifyOtp(clean, sessionId);
+        await mfaApi.verifyOtp(code, sessionId);
       }
-      await onVerified(pendingError);
+      setSuccess(true);
+      setTimeout(() => onVerified(pendingError), 800);
     } catch (err) {
-      setError(err?.data?.detail || 'Invalid code — please try again.');
+      setError(err?.data?.detail || 'Incorrect code. Please try again.');
+      setShake(true);
+      setTimeout(() => setShake(false), 600);
+      setDigits(Array(NUM_DIGITS).fill(''));
+      setTimeout(() => inputRefs.current[0]?.focus(), 50);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const code = digits.join('');
+    if (code.length < NUM_DIGITS) { setError('Please enter all 6 digits'); return; }
+    submitCode(code);
+  };
+
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.78)',
-      backdropFilter: 'blur(12px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 16,
-      animation: 'fadeIn 0.2s ease',
-    }}>
+    <>
+      <style>{`
+        @keyframes mfa-slide-up {
+          from { opacity: 0; transform: translateY(32px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1);    }
+        }
+        @keyframes mfa-backdrop-in {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes mfa-shake {
+          0%,100% { transform: translateX(0); }
+          20%     { transform: translateX(-8px); }
+          40%     { transform: translateX(8px); }
+          60%     { transform: translateX(-5px); }
+          80%     { transform: translateX(5px); }
+        }
+        @keyframes mfa-success-pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+          70%  { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
+          100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+        }
+        .mfa-digit {
+          width: 48px; height: 58px;
+          background: var(--surface-elevated, rgba(255,255,255,0.06));
+          border: 1.5px solid var(--border, rgba(255,255,255,0.1));
+          border-radius: 12px;
+          font-size: 24px; font-weight: 700; font-family: monospace;
+          color: var(--text-primary, #fff);
+          text-align: center;
+          outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+          caret-color: transparent;
+        }
+        .mfa-digit:focus {
+          border-color: #6366f1;
+          box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+        }
+        .mfa-digit.filled { border-color: rgba(99,102,241,0.6); }
+        .mfa-digit.success-state { border-color: #22c55e !important; box-shadow: 0 0 0 3px rgba(34,197,94,0.2) !important; }
+        .mfa-card { animation: mfa-slide-up 0.3s cubic-bezier(0.16,1,0.3,1) forwards; }
+        .mfa-shake { animation: mfa-shake 0.5s ease; }
+      `}</style>
+
+      {/* Backdrop */}
       <div style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 18, padding: 32,
-        width: '100%', maxWidth: 420,
-        boxShadow: '0 30px 70px rgba(0,0,0,0.55)',
-        position: 'relative',
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(16px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 16,
+        animation: 'mfa-backdrop-in 0.25s ease',
       }}>
-        {/* Close */}
-        <button onClick={onCancel} style={{
-          position: 'absolute', top: 16, right: 16,
-          background: 'transparent', border: 'none',
-          color: 'var(--text-muted)', cursor: 'pointer',
+        {/* Card */}
+        <div className="mfa-card" style={{
+          background: 'var(--surface, #1e1e2e)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 20, padding: '36px 32px',
+          width: '100%', maxWidth: 400,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04)',
         }}>
-          <X size={18} />
-        </button>
-
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-          <div style={{
-            width: 50, height: 50, borderRadius: 14,
-            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Lock size={22} color="white" strokeWidth={1.5} />
-          </div>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>
-              Security Verification Required
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
-              Unusual activity detected — verify your identity
-            </div>
-          </div>
-        </div>
-
-        {/* Method pill */}
-        <div style={{
-          background: 'rgba(59,130,246,0.1)',
-          border: '1px solid rgba(59,130,246,0.2)',
-          borderRadius: 10, padding: '10px 14px',
-          display: 'flex', alignItems: 'center', gap: 8,
-          marginBottom: 20,
-        }}>
-          <KeyRound size={15} color="#3b82f6" />
-          <span style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>
-            {method === 'totp'
-              ? 'Open your Authenticator App and enter the 6-digit code'
-              : 'Enter the 6-digit code sent to your email'}
-          </span>
-        </div>
-
-        {/* DEV MODE: show OTP inline so you don't need to check server logs */}
-        {devOtp && (
-          <div style={{
-            background: 'rgba(234,179,8,0.15)',
-            border: '1px solid rgba(234,179,8,0.4)',
-            borderRadius: 10, padding: '12px 16px',
-            marginBottom: 16,
-            textAlign: 'center',
-          }}>
-            <div style={{ fontSize: 11, color: '#ca8a04', fontWeight: 600, marginBottom: 6, letterSpacing: '0.05em' }}>
-              🔧 DEV MODE — Your OTP Code
-            </div>
+          {/* Icon */}
+          <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <div style={{
-              fontSize: 32, fontFamily: 'monospace', letterSpacing: '0.4em',
-              fontWeight: 700, color: '#fbbf24',
+              width: 64, height: 64, borderRadius: 18,
+              background: success
+                ? 'linear-gradient(135deg,#22c55e,#16a34a)'
+                : 'linear-gradient(135deg,#6366f1,#4f46e5)',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: success
+                ? '0 8px 24px rgba(34,197,94,0.3)'
+                : '0 8px 24px rgba(99,102,241,0.3)',
+              transition: 'all 0.4s ease',
+              animation: success ? 'mfa-success-pulse 0.8s ease' : 'none',
             }}>
-              {devOtp}
-            </div>
-            <div style={{ fontSize: 11, color: '#ca8a04', marginTop: 4 }}>
-              (This box is hidden in production)
+              {success
+                ? <ShieldCheck size={28} color="white" strokeWidth={1.5} />
+                : <KeyRound size={28} color="white" strokeWidth={1.5} />
+              }
             </div>
           </div>
-        )}
 
-        {/* Countdown */}
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 6,
-          color: timeLeft <= 30 ? '#ef4444' : 'var(--text-muted)',
-          fontSize: 12, marginBottom: 16,
-        }}>
-          <Clock size={13} />
-          {timeLeft > 0 ? `Code expires in ${fmt(timeLeft)}` : 'Code expired — close and retry'}
-        </div>
-
-        <form onSubmit={handleSubmit}>
-          <input
-            autoFocus
-            className="input"
-            type="text"
-            inputMode="numeric"
-            maxLength={8}
-            value={code}
-            onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
-            placeholder="000000"
-            disabled={timeLeft <= 0}
-            style={{
-              textAlign: 'center',
-              fontSize: 30,
-              letterSpacing: '0.45em',
-              fontFamily: 'monospace',
-              padding: '14px',
-              marginBottom: 12,
-            }}
-          />
-
-          {error && (
-            <div style={{
-              background: 'rgba(239,68,68,0.1)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              borderRadius: 8, padding: '10px 12px',
-              color: '#ef4444', fontSize: 13, marginBottom: 12,
-            }}>
-              {error}
+          {/* Title */}
+          <div style={{ textAlign: 'center', marginBottom: 6 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary,#fff)' }}>
+              {success ? 'Verified!' : 'Quick Security Check'}
             </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary,#94a3b8)', marginTop: 6, lineHeight: 1.5 }}>
+              {success
+                ? 'You\'re all set. Resuming your session…'
+                : method === 'totp'
+                  ? 'Open your authenticator app and enter the code shown'
+                  : 'We sent a verification code to your registered email'}
+            </div>
+          </div>
+
+          {!success && (
+            <>
+              {/* Dev OTP box — subtle, only in dev */}
+              {devOtp && (
+                <div style={{
+                  margin: '16px 0',
+                  padding: '10px 14px',
+                  background: 'rgba(234,179,8,0.08)',
+                  border: '1px dashed rgba(234,179,8,0.3)',
+                  borderRadius: 10, textAlign: 'center',
+                }}>
+                  <span style={{ fontSize: 11, color: '#92400e', fontWeight: 500 }}>
+                    Dev code:&nbsp;
+                  </span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 18, fontWeight: 700, letterSpacing: '0.2em', color: '#fbbf24' }}>
+                    {devOtp}
+                  </span>
+                </div>
+              )}
+
+              {/* 6-digit input boxes */}
+              <form onSubmit={handleSubmit}>
+                <div
+                  className={shake ? 'mfa-shake' : ''}
+                  style={{ display: 'flex', gap: 8, justifyContent: 'center', margin: '20px 0' }}
+                >
+                  {digits.map((d, i) => (
+                    <input
+                      key={i}
+                      ref={el => inputRefs.current[i] = el}
+                      className={`mfa-digit ${d ? 'filled' : ''}`}
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={1}
+                      value={d}
+                      onChange={e => handleDigitChange(i, e.target.value)}
+                      onKeyDown={e => handleKeyDown(i, e)}
+                      onPaste={i === 0 ? handlePaste : undefined}
+                      disabled={loading || timeLeft <= 0}
+                      autoComplete="one-time-code"
+                    />
+                  ))}
+                </div>
+
+                {/* Error */}
+                {error && (
+                  <div style={{
+                    fontSize: 13, color: '#f87171', textAlign: 'center',
+                    marginBottom: 12, padding: '8px 12px',
+                    background: 'rgba(239,68,68,0.08)',
+                    borderRadius: 8,
+                  }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Timer row */}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  marginBottom: 16, fontSize: 12,
+                  color: timeLeft <= 30 ? '#f87171' : 'var(--text-muted,#64748b)',
+                }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Clock size={12} />
+                    {timeLeft > 0 ? `Expires in ${fmt(timeLeft)}` : 'Code expired'}
+                  </span>
+                  {method === 'email_otp' && (
+                    <button type="button" onClick={onCancel} style={{
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      color: '#6366f1', fontSize: 12, padding: 0,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}>
+                      <RotateCcw size={11} /> Resend
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || digits.join('').length < NUM_DIGITS || timeLeft <= 0}
+                  style={{
+                    width: '100%', padding: '13px',
+                    background: 'linear-gradient(135deg,#6366f1,#4f46e5)',
+                    border: 'none', borderRadius: 12,
+                    color: '#fff', fontSize: 14, fontWeight: 600,
+                    cursor: loading ? 'wait' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    opacity: digits.join('').length < NUM_DIGITS ? 0.5 : 1,
+                    transition: 'opacity 0.2s',
+                    boxShadow: '0 4px 15px rgba(99,102,241,0.3)',
+                  }}
+                >
+                  {loading ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{
+                        width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)',
+                        borderTopColor: '#fff', borderRadius: '50%',
+                        animation: 'spin 0.8s linear infinite', display: 'inline-block',
+                      }} />
+                      Verifying…
+                    </span>
+                  ) : (
+                    <><span>Verify</span><ArrowRight size={16} /></>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onCancel}
+                  style={{
+                    width: '100%', marginTop: 10, padding: '11px',
+                    background: 'transparent',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: 12, color: 'var(--text-muted,#64748b)',
+                    fontSize: 13, cursor: 'pointer',
+                  }}
+                >
+                  Sign out instead
+                </button>
+              </form>
+            </>
           )}
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={loading || timeLeft <= 0}
-            style={{ width: '100%', justifyContent: 'center', padding: 13, fontSize: 14 }}
-          >
-            {loading ? 'Verifying…' : '✓ Verify & Continue'}
-          </button>
-
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              width: '100%', marginTop: 10, padding: 10,
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 8, color: 'var(--text-muted)',
-              cursor: 'pointer', fontSize: 13,
-            }}
-          >
-            Cancel — Sign Out
-          </button>
-        </form>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
