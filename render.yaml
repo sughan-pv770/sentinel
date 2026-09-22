@@ -16,7 +16,7 @@ services:
         fromService:
           type: redis
           name: sentinelx-redis
-          envVarKey: REDIS_URL
+          property: connectionString
 
   - type: web
     name: origin-demo-service
