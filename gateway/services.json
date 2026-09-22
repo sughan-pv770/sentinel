@@ -1,0 +1,44 @@
+{
+  "services": {
+    "demo-service": {
+      "base_url": "http://localhost:9000",
+      "docker_base_url": "http://demo-service:9000",
+      "description": "Original SentinelX demo origin service",
+      "endpoints": {
+        "/profile": { "sensitivity": "normal", "auth_required": true },
+        "/orders": { "sensitivity": "normal", "auth_required": true },
+        "/users": { "sensitivity": "normal", "auth_required": true },
+        "/payments/transfer": { "sensitivity": "sensitive", "auth_required": true },
+        "/admin/users": { "sensitivity": "admin", "auth_required": true },
+        "/admin/add_user": { "sensitivity": "admin", "auth_required": true }
+      }
+    },
+    "orbit": {
+      "base_url": "http://localhost:9001",
+      "docker_base_url": "http://orbit:9001",
+      "description": "Orbit SaaS application protected by SentinelX",
+      "endpoints": {
+        "/profile": { "sensitivity": "normal", "auth_required": true, "methods": { "PATCH": { "sensitivity": "normal" }, "POST": { "sensitivity": "normal" }, "DELETE": { "sensitivity": "admin" } } },
+        "/orders": { "sensitivity": "normal", "auth_required": true, "methods": { "POST": { "sensitivity": "sensitive" }, "PUT": { "sensitivity": "sensitive" }, "PATCH": { "sensitivity": "normal" }, "DELETE": { "sensitivity": "admin" } } },
+        "/billing": { "sensitivity": "normal", "auth_required": true },
+        "/payments/transfer": { "sensitivity": "sensitive", "auth_required": true, "methods": { "GET": { "sensitivity": "normal" }, "PUT": { "sensitivity": "sensitive" }, "PATCH": { "sensitivity": "sensitive" }, "DELETE": { "sensitivity": "admin" } } },
+        "/admin/users": { "sensitivity": "admin", "auth_required": true, "methods": { "GET": { "sensitivity": "normal" }, "POST": { "sensitivity": "admin" }, "PUT": { "sensitivity": "admin" }, "PATCH": { "sensitivity": "admin" }, "DELETE": { "sensitivity": "admin" } } },
+        "/admin/add_user": { "sensitivity": "admin", "auth_required": true, "methods": { "GET": { "sensitivity": "admin" }, "PUT": { "sensitivity": "admin" }, "PATCH": { "sensitivity": "admin" }, "DELETE": { "sensitivity": "admin" } } },
+        "/users": { "sensitivity": "admin", "auth_required": true },
+        "/signup": { "sensitivity": "normal", "auth_required": false },
+        "/login": { "sensitivity": "normal", "auth_required": false },
+        "/env": { "sensitivity": "normal", "auth_required": false },
+        "/setup_password": { "sensitivity": "normal", "auth_required": false }
+      }
+    },
+    "stub-service": {
+      "base_url": "http://localhost:9002",
+      "docker_base_url": "http://stub-service:9002",
+      "description": "Minimal stub service — proof that SentinelX can protect any SaaS app via config alone, zero gateway code changes",
+      "endpoints": {
+        "/hello": { "sensitivity": "normal", "auth_required": true },
+        "/secret": { "sensitivity": "sensitive", "auth_required": true }
+      }
+    }
+  }
+}

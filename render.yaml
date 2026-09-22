@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: sentinelx-gateway
+    env: python
+    buildCommand: "cd gateway && pip install -r requirements.txt"
+    startCommand: "cd gateway && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: SENTINELX_ORIGIN_BASE_URL
+        fromService:
+          type: web
+          name: origin-demo-service
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: SENTINELX_ENVIRONMENT
+        value: production
+      - key: SENTINELX_REDIS_URL
+        fromService:
+          type: redis
+          name: sentinelx-redis
+          envVarKey: REDIS_URL
+
+  - type: web
+    name: origin-demo-service
+    env: python
+    buildCommand: "cd demo-service && pip install -r requirements.txt"
+    startCommand: "cd demo-service && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: origin-db
+          property: connectionString
+
+  - type: redis
+    name: sentinelx-redis
+    ipAllowList: []
+    plan: free
+
+databases:
+  - name: origin-db
+    databaseName: origin
+    user: origin

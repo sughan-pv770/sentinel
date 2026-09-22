@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  demo-service:
+    build: ./demo-service
+    ports:
+      - "9000:9000"
+
+  orbit:
+    build: ./orbit
+    ports:
+      - "9001:9001"
+    environment:
+      GATEWAY_URL: "http://gateway:8080"
+      ORBIT_ENV: "demo"
+    depends_on:
+      - gateway
+
+  stub-service:
+    build: ./stub-service
+    ports:
+      - "9002:9002"
+
+  gateway:
+    build: ./gateway
+    ports:
+      - "8080:8080"
+    environment:
+      SENTINELX_REDIS_URL: "redis://redis:6379/0"
+      SENTINELX_ORIGIN_BASE_URL: "http://demo-service:9000"
+      SENTINELX_ORBIT_BASE_URL: "http://orbit:9001"
+      SENTINELX_ENVIRONMENT: "docker-compose"
+    depends_on:
+      redis:
+        condition: service_healthy
+      demo-service:
+        condition: service_started

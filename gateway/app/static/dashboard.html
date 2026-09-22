@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SentinelX — Zero Trust Runtime Console</title>
+  <meta name="description"
+    content="SentinelX continuously scores API trust in real time using ML + deterministic rules." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css?v=6" />
+</head>
+
+<body>
+
+  <!-- Ambient background orbs -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+  <div class="grid-overlay"></div>
+
+  <!-- ═══════════════ HEADER ═══════════════ -->
+  <header class="topbar" id="topbar">
+    <div class="topbar-brand">
+      <div class="brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 2L3 7v5c0 5.25 3.75 10.15 9 11.35C17.25 22.15 21 17.25 21 12V7L12 2z" fill="url(#shield-grad)"
+            stroke="rgba(99,102,241,0.6)" stroke-width="0.5" />
+          <defs>
+            <linearGradient id="shield-grad" x1="3" y1="2" x2="21" y2="23" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#6366f1" />
+              <stop offset="100%" stop-color="#8b5cf6" />
+            </linearGradient>
+          </defs>
+          <circle cx="12" cy="12" r="3" fill="white" opacity="0.9" />
+        </svg>
+      </div>
+      <div class="brand-text">
+        <span class="brand-name">SentinelX</span>
+        <span class="brand-tagline">Zero Trust Runtime Console</span>
+      </div>
+    </div>
+
+    <nav class="topbar-tabs">
+      <button class="tab-btn active" data-tab="console" id="tab-console">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <rect x="1" y="1" width="14" height="14" rx="2" opacity=".3" />
+          <path d="M4 5l3 3-3 3M8 11h4" />
+        </svg>
+        Console
+      </button>
+      <button class="tab-btn" data-tab="pipeline" id="tab-pipeline">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="3" cy="8" r="2" />
+          <circle cx="8" cy="4" r="2" />
+          <circle cx="8" cy="12" r="2" />
+          <circle cx="13" cy="8" r="2" />
+          <path d="M5 8h1M10 4h1.5L13 8M10 12h1.5L13 8" />
+        </svg>
+        ML Pipeline
+      </button>
+      <button class="tab-btn" data-tab="users" id="tab-users">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="6" cy="5" r="3" opacity=".9" />
+          <path d="M1 13c0-2.76 2.24-5 5-5s5 2.24 5 5" opacity=".6" />
+          <circle cx="12" cy="5" r="2.5" opacity=".7" />
+          <path d="M11 13c0-1.7.8-3.2 2-4.2" opacity=".4" />
+        </svg>
+        Users
+      </button>
+    </nav>
+
+    <div class="topbar-status">
+      <div class="status-dot" id="status-dot"></div>
+      <span class="status-text" id="status-text">connecting…</span>
+      <div class="stat-pill" id="stat-backend">—</div>
+      <div class="stat-pill mono" id="clock">—</div>
+    </div>
+  </header>
+
+  <!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+  <main class="workspace">
+
+    <!-- ══ TAB: CONSOLE ══ -->
+    <div class="tab-content active" id="content-console">
+
+      <!-- IDENTITY SIDEBAR -->
+      <aside class="sidebar">
+        <div class="sidebar-section">
+          <div class="section-label">MONITORING</div>
+          <select id="identity-select" class="identity-select"></select>
+
+          <!-- RISK RING -->
+          <div class="risk-ring-wrap">
+            <svg class="risk-ring-svg" viewBox="0 0 200 200" id="risk-ring-svg">
+              <!-- Background track -->
+              <circle cx="100" cy="100" r="80" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="16" />
+              <!-- Colored progress arc -->
+              <circle cx="100" cy="100" r="80" fill="none" stroke="url(#ring-grad)" stroke-width="16"
+                stroke-dasharray="502" stroke-dashoffset="502" stroke-linecap="round" transform="rotate(-90 100 100)"
+                id="risk-arc" style="transition: stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1), stroke 0.5s ease" />
+              <defs>
+                <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#06b6d4" id="grad-stop1" style="transition: stop-color 0.8s ease;" />
+                  <stop offset="100%" stop-color="#06b6d4" id="grad-stop2" style="transition: stop-color 0.8s ease;" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="risk-ring-center">
+              <div class="risk-number" id="risk-number">—</div>
+              <div class="risk-label">RISK</div>
+            </div>
+          </div>
+
+          <!-- TIER BADGE -->
+          <div class="tier-badge" id="tier-badge">
+            <div class="tier-dot" id="tier-dot"></div>
+            <span id="tier-label">awaiting data</span>
+          </div>
+
+          <!-- SCORE BARS -->
+          <div class="score-bars">
+            <div class="score-bar-row">
+              <span class="score-bar-label">Rules</span>
+              <div class="score-bar-track">
+                <div class="score-bar-fill rules" id="bar-rule"></div>
+              </div>
+              <span class="score-bar-val" id="val-rule">0</span>
+            </div>
+            <div class="score-bar-row">
+              <span class="score-bar-label">ML</span>
+              <div class="score-bar-track">
+                <div class="score-bar-fill ml" id="bar-ml"></div>
+              </div>
+              <span class="score-bar-val" id="val-ml">0</span>
+            </div>
+          </div>
+
+          <!-- ACTION -->
+          <div class="action-card" id="action-card">
+            <div class="action-icon" id="action-icon">◎</div>
+            <div class="action-text" id="action-line">Awaiting first request for this identity.</div>
+          </div>
+        </div>
+
+        <!-- POLICY THRESHOLDS -->
+        <div class="sidebar-section">
+          <div class="section-label">POLICY THRESHOLDS</div>
+          <div class="threshold-sliders">
+            <div class="threshold-row">
+              <div class="threshold-labels">
+                <span>Allow ≤</span>
+                <span id="th-allow-val" class="threshold-val allow">30</span>
+              </div>
+              <input type="range" id="th-allow" min="0" max="100" value="30" class="slider slider-allow">
+            </div>
+            <div class="threshold-row">
+              <div class="threshold-labels">
+                <span>Step-Up ≤</span>
+                <span id="th-stepup-val" class="threshold-val step_up">60</span>
+              </div>
+              <input type="range" id="th-stepup" min="0" max="100" value="60" class="slider slider-stepup">
+            </div>
+            <div class="threshold-row">
+              <div class="threshold-labels">
+                <span>Restrict ≤</span>
+                <span id="th-restrict-val" class="threshold-val restrict">85</span>
+              </div>
+              <input type="range" id="th-restrict" min="0" max="100" value="85" class="slider slider-restrict">
+            </div>
+          </div>
+          <button id="save-policy" class="apply-btn">Apply Policy</button>
+          <div class="policy-hint">Above restrict threshold → <strong>REVOKE</strong></div>
+        </div>
+      </aside>
+
+      <!-- MAIN CONSOLE AREA -->
+      <div class="console-main">
+
+        <!-- TOP ROW: Browser Simulation + Alerts -->
+        <div class="console-top-row">
+
+          <!-- SIMULATED BROWSER -->
+          <div class="card card-browser">
+            <div class="card-header">
+              <span class="card-title">🌐 Live API Browser</span>
+              <span class="card-subtitle">All requests intercepted by SentinelX in real time</span>
+            </div>
+            <!-- Browser chrome -->
+            <div class="browser-chrome">
+              <div class="browser-dots">
+                <span class="bdot bdot-red"></span>
+                <span class="bdot bdot-yellow"></span>
+                <span class="bdot bdot-green"></span>
+              </div>
+              <div class="browser-url" id="browser-url">https://api.internal / <span
+                  id="browser-endpoint">waiting…</span></div>
+              <div class="browser-status-icon" id="browser-status-icon">●</div>
+            </div>
+            <!-- Browser content area -->
+            <div class="browser-body" id="browser-body">
+              <div class="browser-idle">
+                <div class="browser-idle-icon">◈</div>
+                <p>Fire a scenario to see real-time API interception.<br />
+                  Every request passes through the SentinelX ML pipeline.</p>
+              </div>
+            </div>
+            <!-- Request log inside browser -->
+            <div class="browser-log" id="browser-log">
+              <div class="browser-log-header">REQUEST INTERCEPTOR LOG</div>
+              <div class="browser-log-body" id="browser-log-body">
+                <div class="log-idle">No requests yet. Click a scenario below →</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ALERT TICKER -->
+          <div class="card card-alerts">
+            <div class="card-header">
+              <span class="card-title">⚡ Explainable Alerts</span>
+              <div class="alert-counter" id="alert-counter">0 active</div>
+            </div>
+            <div class="ticker-scroll" id="ticker-scroll">
+              <div class="ticker-empty" id="ticker-empty">No alerts yet — fire a scenario to begin.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- API SANDBOX REQUEST BUILDER -->
+        <div class="card card-sandbox">
+          <div class="card-header">
+            <div>
+              <span class="card-title">🚀 Interactive API Sandbox</span>
+              <span class="card-subtitle">Manually construct requests to test real-time detection</span>
+            </div>
+            <div style="display:flex; gap: 8px;">
+               <button id="run-demo-btn" class="apply-btn" style="margin-top:0; padding: 4px 12px; height:auto;">Run Demo</button>
+               <button id="fullscreen-btn" class="apply-btn" style="margin-top:0; padding: 4px 12px; height:auto;">⛶</button>
+            </div>
+          </div>
+          <div class="sandbox-body">
+            <div class="sandbox-row">
+              <select id="sandbox-method" class="sandbox-method sandbox-select"
+                style="margin-right: 12px; width: 85px;">
+                <option value="GET">GET</option>
+                <option value="POST" selected>POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+              <div class="sandbox-presets" id="sandbox-presets">
+                <button class="preset-btn active" data-ep="/profile">/profile</button>
+                <button class="preset-btn" data-ep="/orders">/orders</button>
+                <button class="preset-btn" data-ep="/payments/transfer">/payments/transfer</button>
+                <button class="preset-btn" data-ep="/admin/users">/admin/users</button>
+                <button class="preset-btn" data-ep="/admin/add_user">/admin/add_user</button>
+              </div>
+              <input type="hidden" id="sandbox-endpoint" value="/profile" />
+              <button id="sandbox-send" class="sandbox-btn-send">Send Request ➔</button>
+            </div>
+            <div class="sandbox-options">
+              <label>Location Spoofing:
+                <select id="sandbox-geo" class="sandbox-select">
+                  <option value="IN">Local (IN)</option>
+                  <option value="RU">Anomalous (RU)</option>
+                </select>
+              </label>
+              <label>Pacing:
+                <select id="sandbox-speed" class="sandbox-select">
+                  <option value="normal">Single Request</option>
+                  <option value="spike">Burst (28 req)</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- REQUEST LEDGER -->
+        <div class="card card-ledger">
+          <div class="card-header">
+            <span class="card-title">📋 Request Ledger</span>
+            <span class="card-subtitle" id="ledger-identity-label">— this identity</span>
+          </div>
+          <div class="ledger-scroll">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Endpoint</th>
+                  <th>Score</th>
+                  <th>Tier</th>
+                  <th>Top Reason</th>
+                </tr>
+              </thead>
+              <tbody id="ledger-body">
+                <tr>
+                  <td colspan="5" class="ledger-empty">Nothing logged yet for this identity.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══ TAB: ML PIPELINE ══ -->
+    <div class="tab-content" id="content-pipeline">
+      <div class="pipeline-page">
+        <div class="pipeline-header">
+          <h2>ML Scoring Pipeline</h2>
+          <p>Live view of every processing stage for the last scored request</p>
+        </div>
+
+        <div class="pipeline-flow">
+          <!-- Stage 1 -->
+          <div class="pipeline-stage" id="ps-1">
+            <div class="ps-number">01</div>
+            <div class="ps-icon">📥</div>
+            <div class="ps-name">Request Intake</div>
+            <div class="ps-desc">Headers parsed into RequestContext Pydantic model</div>
+            <div class="ps-data" id="ps-1-data">—</div>
+            <div class="ps-latency" id="ps-1-lat"></div>
+          </div>
+          <div class="pipeline-connector">
+            <div class="connector-line" id="conn-1"></div>
+            <div class="connector-pulse" id="cpulse-1"></div>
+          </div>
+
+          <!-- Stage 2 -->
+          <div class="pipeline-stage" id="ps-2">
+            <div class="ps-number">02</div>
+            <div class="ps-icon">🧠</div>
+            <div class="ps-name">Feature Extraction</div>
+            <div class="ps-desc">7-signal vector built from Redis baseline</div>
+            <div class="ps-data" id="ps-2-data">—</div>
+            <div class="ps-latency" id="ps-2-lat"></div>
+          </div>
+          <div class="pipeline-connector">
+            <div class="connector-line" id="conn-2"></div>
+            <div class="connector-pulse" id="cpulse-2"></div>
+          </div>
+
+          <!-- Stage 3: Split into Rules + ML -->
+          <div class="pipeline-split">
+            <div class="split-label">Parallel Scoring Engines</div>
+            <div class="split-row">
+              <div class="pipeline-stage split-stage" id="ps-3a">
+                <div class="ps-number">03A</div>
+                <div class="ps-icon">📏</div>
+                <div class="ps-name">Rule Engine</div>
+                <div class="ps-desc">Deterministic hard triggers (impossible travel, privilege escalation)</div>
+                <div class="ps-data" id="ps-3a-data">—</div>
+              </div>
+              <div class="split-vs">VS</div>
+              <div class="pipeline-stage split-stage" id="ps-3b">
+                <div class="ps-number">03B</div>
+                <div class="ps-icon">🤖</div>
+                <div class="ps-name">Isolation Forest ML</div>
+                <div class="ps-desc">Unsupervised anomaly detection on 4K synthetic samples</div>
+                <div class="ps-data" id="ps-3b-data">—</div>
+              </div>
+            </div>
+          </div>
+          <div class="pipeline-connector">
+            <div class="connector-line" id="conn-3"></div>
+            <div class="connector-pulse" id="cpulse-3"></div>
+          </div>
+
+          <!-- Stage 4 -->
+          <div class="pipeline-stage" id="ps-4">
+            <div class="ps-number">04</div>
+            <div class="ps-icon">⚖️</div>
+            <div class="ps-name">Score Blending</div>
+            <div class="ps-desc">Rules × 45% + ML × 55% (hard triggers bypass blending)</div>
+            <div class="ps-data" id="ps-4-data">—</div>
+          </div>
+          <div class="pipeline-connector">
+            <div class="connector-line" id="conn-4"></div>
+            <div class="connector-pulse" id="cpulse-4"></div>
+          </div>
+
+          <!-- Stage 5 -->
+          <div class="pipeline-stage" id="ps-5">
+            <div class="ps-number">05</div>
+            <div class="ps-icon">🛡️</div>
+            <div class="ps-name">Enforcement</div>
+            <div class="ps-desc">Allow / Step-Up / Restrict / Revoke decision</div>
+            <div class="ps-data" id="ps-5-data">—</div>
+          </div>
+        </div>
+
+        <!-- Feature Vector Display -->
+        <div class="feature-grid-wrap">
+          <div class="card-header">
+            <span class="card-title">📊 Live Feature Vector — last request</span>
+          </div>
+          <div class="feature-grid" id="feature-grid">
+            <div class="feature-cell" id="f-freq">
+              <div class="feature-name">Req/min</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-freq"></div>
+              </div>
+              <div class="feature-val" id="fv-freq">—</div>
+            </div>
+            <div class="feature-cell" id="f-novelty">
+              <div class="feature-name">Endpoint Novelty</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-novelty"></div>
+              </div>
+              <div class="feature-val" id="fv-novelty">—</div>
+            </div>
+            <div class="feature-cell" id="f-geo">
+              <div class="feature-name">Geo Change</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-geo"></div>
+              </div>
+              <div class="feature-val" id="fv-geo">—</div>
+            </div>
+            <div class="feature-cell" id="f-device">
+              <div class="feature-name">Device Change</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-device"></div>
+              </div>
+              <div class="feature-val" id="fv-device">—</div>
+            </div>
+            <div class="feature-cell" id="f-time">
+              <div class="feature-name">Time Deviation</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-time"></div>
+              </div>
+              <div class="feature-val" id="fv-time">—</div>
+            </div>
+            <div class="feature-cell" id="f-payload">
+              <div class="feature-name">Payload Z-Score</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-payload"></div>
+              </div>
+              <div class="feature-val" id="fv-payload">—</div>
+            </div>
+            <div class="feature-cell" id="f-age">
+              <div class="feature-name">Token Age (s)</div>
+              <div class="feature-bar-wrap">
+                <div class="feature-bar" id="fb-age"></div>
+              </div>
+              <div class="feature-val" id="fv-age">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: USERS ══ -->
+    <div class="tab-content" id="content-users">
+      <div class="users-page">
+        <div class="users-header">
+          <div>
+            <h2>User Registry (Read-Only)</h2>
+            <p>Live view from the gateway database. New users must be created through the origin application (Orbit).</p>
+          </div>
+        </div>
+
+        <!-- Users table -->
+        <div class="users-table-wrap">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Identity ID</th>
+                <th>Name</th>
+                <th>Role</th>
+                <th>Supervisor</th>
+                <th>Network Tag</th>
+                <th>Risk Score</th>
+              </tr>
+            </thead>
+            <tbody id="users-body">
+              <tr>
+                <td colspan="6" class="ledger-empty">Loading users…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Latency bar (bottom) -->
+  <div class="latency-bar" id="latency-bar">
+    <span class="lb-label">LATENCY BUDGET</span>
+    <div class="lb-track">
+      <div class="lb-fill" id="lb-fill"></div>
+    </div>
+    <span class="lb-val" id="lb-val">— ms</span>
+  </div>
+
+  <!-- Toast notifications -->
+  <div class="toast-stack" id="toast-stack"></div>
+
+  <script src="/static/js/dashboard.js?v=6"></script>
+</body>
+
+</html>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbit SaaS | Protected by SentinelX</title>
+    <meta name="description" content="Orbit — a Zero Trust protected SaaS platform powered by SentinelX Gateway.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <!-- Phase 1: Variable Inter font for smooth weight animation -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css?v=4">
+</head>
+<body class="gradient-mesh-bg">
+    <!-- Phase 3: Toast notification container (stacking queue) -->
+    <div id="toast-container"></div>
+    <!-- Legacy toast element kept for backward compat -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Phase 7: Revoke flash overlay (cosmetic only — fires AFTER sync logout) -->
+    <div id="revoke-flash"></div>
+
+    <!-- Phase 2: Command Palette -->
+    <div id="command-palette-overlay" class="hidden" role="dialog" aria-modal="true" aria-label="Command Palette">
+        <div id="command-palette">
+            <div id="command-palette-input-wrap">
+                <svg id="command-palette-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input id="command-palette-input" type="text" placeholder="Search actions…" autocomplete="off" spellcheck="false">
+                <kbd id="command-palette-kbd">ESC</kbd>
+            </div>
+            <div id="command-palette-list" role="listbox" aria-label="Commands"></div>
+            <div class="cp-footer">
+                <span class="cp-footer-item"><kbd class="cp-footer-key">↑↓</kbd> navigate</span>
+                <span class="cp-footer-item"><kbd class="cp-footer-key">↵</kbd> select</span>
+                <span class="cp-footer-item"><kbd class="cp-footer-key">ESC</kbd> close</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="app">
+        <!-- ═══════════════════════════════════════════ AUTH VIEW ═══ -->
+        <div id="login-view" class="view active">
+            <div class="login-bg">
+                <div class="login-bg-orb orb1"></div>
+                <div class="login-bg-orb orb2"></div>
+                <div class="login-bg-orb orb3"></div>
+            </div>
+            <div class="login-card">
+                <div class="login-brand">
+                    <div class="brand-logo">
+                        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <path d="M24 4L44 15V33L24 44L4 33V15L24 4Z" fill="url(#hexGrad)" opacity="0.15"/>
+                            <path d="M24 4L44 15V33L24 44L4 33V15L24 4Z" stroke="url(#hexGrad)" stroke-width="1.5" fill="none"/>
+                            <circle cx="24" cy="24" r="6" fill="url(#hexGrad)"/>
+                            <path d="M24 10L24 18M24 30L24 38M10 17L17 21M31 27L38 31M10 31L17 27M31 21L38 17" stroke="url(#hexGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.6"/>
+                            <defs>
+                                <linearGradient id="hexGrad" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+                                    <stop offset="0%" stop-color="#60a5fa"/>
+                                    <stop offset="100%" stop-color="#a78bfa"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <h1 class="login-title">Orbit</h1>
+                    <p class="login-subtitle">Protected by <span class="gradient-text">SentinelX</span> Zero Trust</p>
+                </div>
+
+                <div class="login-form">
+                    <div class="form-group">
+                        <label class="form-label">Sign in as</label>
+                        <div class="select-wrapper">
+                            <select id="user-select">
+                                <option value="u_alex">Alex Rao — Member</option>
+                                <option value="u_admin">Priya Nair — Admin</option>
+                            </select>
+                            <svg class="select-arrow" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                <path d="M4 6L8 10L12 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                    </div>
+                    <button id="login-btn" class="btn-primary btn-block">
+                        <span>Continue</span>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                            <path d="M3 8H13M9 4L13 8L9 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="login-footer">
+                    <span class="shield-dot"></span>
+                    All connections secured by SentinelX
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════ SETUP PASSWORD ═══ -->
+        <div id="setup-password-view" class="view">
+            <div class="login-bg">
+                <div class="login-bg-orb orb1"></div>
+                <div class="login-bg-orb orb2"></div>
+            </div>
+            <div class="login-card">
+                <div class="login-brand">
+                    <div class="brand-logo">
+                        <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+                            <path d="M24 4L44 15V33L24 44L4 33V15L24 4Z" stroke="url(#hexGrad2)" stroke-width="1.5" fill="url(#hexGrad2)" fill-opacity="0.1"/>
+                            <circle cx="24" cy="24" r="6" fill="url(#hexGrad2)"/>
+                            <defs>
+                                <linearGradient id="hexGrad2" x1="4" y1="4" x2="44" y2="44">
+                                    <stop offset="0%" stop-color="#60a5fa"/>
+                                    <stop offset="100%" stop-color="#a78bfa"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <h1 class="login-title" style="font-size:28px">Welcome to Orbit</h1>
+                    <p class="login-subtitle">Set a password to secure your account</p>
+                </div>
+                <div class="login-form">
+                    <div class="form-group">
+                        <label class="form-label">New Password</label>
+                        <input type="password" id="new-password" class="form-input non-float" placeholder="Enter a strong password">
+                    </div>
+                    <button id="set-password-btn" class="btn-primary btn-block">
+                        <span>Set Password &amp; Continue</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════ DASHBOARD ═══ -->
+        <div id="dashboard-view" class="view dashboard-layout">
+
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-brand">
+                    <svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+                        <path d="M24 4L44 15V33L24 44L4 33V15L24 4Z" stroke="url(#sideHex)" stroke-width="1.5" fill="url(#sideHex)" fill-opacity="0.15"/>
+                        <circle cx="24" cy="24" r="5" fill="url(#sideHex)"/>
+                        <defs>
+                            <linearGradient id="sideHex" x1="4" y1="4" x2="44" y2="44">
+                                <stop offset="0%" stop-color="#60a5fa"/>
+                                <stop offset="100%" stop-color="#a78bfa"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                    <span class="sidebar-brand-name">Orbit</span>
+                </div>
+
+                <div class="sidebar-section-label">WORKSPACE</div>
+                <nav class="sidebar-nav" id="sidebar-nav">
+                    <!-- Phase 3: Sliding pill indicator -->
+                    <div class="nav-pill" id="nav-pill"></div>
+                    <button class="nav-item active" data-target="profile-tab">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+                        </svg>
+                        <span>Profile</span>
+                    </button>
+                    <button class="nav-item" data-target="orders-tab">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4zM3 6h18M16 10a4 4 0 01-8 0"/>
+                        </svg>
+                        <span>Orders</span>
+                    </button>
+                    <button class="nav-item" data-target="billing-tab">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/>
+                        </svg>
+                        <span>Billing</span>
+                    </button>
+                    <button class="nav-item" data-target="admin-tab" id="nav-admin-btn">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                        </svg>
+                        <span>Admin</span>
+                    </button>
+                </nav>
+
+                <div class="sidebar-bottom">
+                    <div class="sentinel-status">
+                        <span class="status-dot"></span>
+                        <span>SentinelX Active</span>
+                    </div>
+                    <div class="user-profile-chip">
+                        <div class="user-avatar" id="user-avatar">U</div>
+                        <span id="current-user-display">Loading…</span>
+                    </div>
+                    <button id="logout-btn" class="btn-logout">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                        </svg>
+                        Sign Out
+                    </button>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="main-content">
+                <!-- Top Bar -->
+                <div class="topbar">
+                    <div id="restriction-banner" class="restriction-banner hidden">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                        </svg>
+                        Account restricted — read-only mode active.
+                    </div>
+                </div>
+
+                <!-- Tab Contents -->
+                <div class="tab-area">
+
+                    <!-- Profile Tab -->
+                    <div id="profile-tab" class="tab-content active">
+                        <div class="page-header">
+                            <div>
+                                <h2 class="page-title">My Profile</h2>
+                                <p class="page-subtitle">View and manage your account information</p>
+                            </div>
+                            <div class="page-actions">
+                                <button id="refresh-profile-btn" class="btn-secondary action-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 101.85-4.76L1 10"/>
+                                    </svg>
+                                    Refresh
+                                </button>
+                                <button id="edit-profile-btn" class="btn-primary action-btn">Save Changes</button>
+                            </div>
+                        </div>
+                        <div id="profile-data" class="profile-card stagger-1">
+                            <div class="skeleton-loader">
+                                <div class="skeleton-line"></div>
+                                <div class="skeleton-line short"></div>
+                                <div class="skeleton-line medium"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Orders Tab -->
+                    <div id="orders-tab" class="tab-content">
+                        <div class="page-header">
+                            <div>
+                                <h2 class="page-title">Orders</h2>
+                                <p class="page-subtitle">Manage your transactions and history</p>
+                            </div>
+                            <div class="page-actions" style="align-items:center; gap:16px;">
+                                <!-- Phase 4: Sparkline mini-chart -->
+                                <div class="sparkline-wrap" id="sparkline-container" style="display:none;">
+                                    <span class="sparkline-label">trend</span>
+                                    <svg id="orders-sparkline" width="80" height="24" viewBox="0 0 80 24"></svg>
+                                </div>
+                                <button id="load-orders-btn" class="btn-secondary action-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 101.85-4.76L1 10"/>
+                                    </svg>
+                                    Load Orders
+                                </button>
+                                <button id="place-order-btn" class="btn-danger action-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>
+                                    </svg>
+                                    Place Order (Sensitive)
+                                </button>
+                            </div>
+                        </div>
+                        <div id="orders-list" class="orders-container stagger-1">
+                            <div class="empty-state">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                                    <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/>
+                                </svg>
+                                <p>Click "Load Orders" to view your transactions</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Billing Tab -->
+                    <div id="billing-tab" class="tab-content">
+                        <div class="page-header">
+                            <div>
+                                <h2 class="page-title">Billing &amp; Payments</h2>
+                                <p class="page-subtitle">Manage your subscriptions and payments</p>
+                            </div>
+                        </div>
+                        <div class="billing-card stagger-1">
+                            <div class="billing-card-inner">
+                                <div class="billing-amount-label">Balance Due</div>
+                                <!-- Phase 2: number counter target -->
+                                <div class="billing-amount" id="billing-amount-display" data-target="450">$0.00</div>
+                                <div class="billing-note">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                    </svg>
+                                    Payments require step-up verification for non-billing roles
+                                </div>
+                            </div>
+                            <button id="pay-btn" class="btn-pay action-btn">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="1" y="4" width="22" height="16" rx="2"/><path d="M1 10h22"/>
+                                </svg>
+                                Pay Now
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Admin Tab -->
+                    <div id="admin-tab" class="tab-content">
+                        <div class="page-header">
+                            <div>
+                                <h2 class="page-title">Team Administration</h2>
+                                <p class="page-subtitle">Manage team members. Enforced by SentinelX policy.</p>
+                            </div>
+                            <div class="page-actions">
+                                <button id="load-users-btn" class="btn-secondary action-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 101.85-4.76L1 10"/>
+                                    </svg>
+                                    Refresh
+                                </button>
+                                <button id="open-add-user-btn" class="btn-primary action-btn">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+                                    </svg>
+                                    Add User
+                                </button>
+                            </div>
+                        </div>
+                        <div id="admin-data" class="admin-content stagger-1">
+                            <div class="empty-state">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+                                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                                    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+                                </svg>
+                                <p>Click "Refresh" to load team members</p>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Activity Log -->
+                <div class="activity-log-container stagger-3">
+                    <div class="activity-log-header">
+                        <div class="activity-log-header-left">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            Activity Log
+                        </div>
+                        <!-- Phase 4: Risk gauge -->
+                        <div class="risk-gauge-wrap" id="risk-gauge-wrap" style="display:none;">
+                            <span class="risk-gauge-label">RISK</span>
+                            <svg id="risk-gauge-svg" viewBox="0 0 32 32">
+                                <circle cx="16" cy="16" r="14" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="3"/>
+                                <circle id="risk-arc" cx="16" cy="16" r="14" fill="none"
+                                    stroke="#10b981" stroke-width="3"
+                                    stroke-dasharray="88" stroke-dashoffset="88"
+                                    stroke-linecap="round"/>
+                            </svg>
+                            <span class="risk-gauge-score" id="risk-gauge-score">0</span>
+                        </div>
+                    </div>
+                    <div id="activity-log" class="activity-log-body"></div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ MFA MODAL ═══ -->
+    <div id="mfa-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-icon-wrap">🔐</div>
+            <h3 class="modal-title">Security Verification</h3>
+            <p class="modal-desc">SentinelX detected unusual activity. Enter your one-time code to proceed.</p>
+            <div id="demo-otp-badge" class="demo-otp-badge" style="display:none;"></div>
+            <input type="text" id="otp-input" class="otp-input" placeholder="• • • • • •" maxlength="6" autocomplete="one-time-code">
+            <div id="otp-error" class="otp-error"></div>
+            <div class="modal-actions">
+                <button id="verify-otp-btn" class="btn-primary">Verify Identity</button>
+                <button id="cancel-mfa-btn" class="btn-ghost">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ ADD USER MODAL ═══ -->
+    <div id="add-user-modal" class="modal-overlay hidden">
+        <div class="modal-box">
+            <div class="modal-header-row">
+                <div>
+                    <h3 class="modal-title" style="margin:0;text-align:left">Add New Team Member</h3>
+                    <p class="modal-desc" style="margin:4px 0 0;text-align:left">Create a new Orbit user and register them with SentinelX.</p>
+                </div>
+                <button class="btn-close-modal" id="close-add-user-modal" aria-label="Close modal">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="add-user-form">
+                <div class="form-group">
+                    <label class="form-label">Full Name <span class="required">*</span></label>
+                    <input type="text" id="new-user-name" class="form-input non-float" placeholder="e.g. Rahul Sharma">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    <div class="role-selector">
+                        <label class="role-option">
+                            <input type="radio" name="new-user-role" value="student" checked>
+                            <span class="role-option-card">
+                                <span class="role-icon">👤</span>
+                                <span class="role-name">Member</span>
+                                <span class="role-desc">Standard access</span>
+                            </span>
+                        </label>
+                        <label class="role-option">
+                            <input type="radio" name="new-user-role" value="manager">
+                            <span class="role-option-card">
+                                <span class="role-icon">📊</span>
+                                <span class="role-name">Manager</span>
+                                <span class="role-desc">Elevated access</span>
+                            </span>
+                        </label>
+                        <label class="role-option">
+                            <input type="radio" name="new-user-role" value="admin">
+                            <span class="role-option-card">
+                                <span class="role-icon">🛡</span>
+                                <span class="role-name">Admin</span>
+                                <span class="role-desc">Full control</span>
+                            </span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top:28px">
+                <button id="add-user-btn" class="btn-primary action-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/>
+                    </svg>
+                    Create User
+                </button>
+                <button class="btn-ghost" id="cancel-add-user-modal">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════ DEV TEST PANEL ═══ -->
+    <div id="dev-test-panel" class="dev-panel" style="display:none;">
+        <div class="dev-panel-header">
+            <span class="dev-tag">DEV</span>
+            <span>Sandbox Parity</span>
+        </div>
+        <div class="dev-panel-row">
+            <select id="dev-verb-select" class="dev-select">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+            </select>
+            <select id="dev-endpoint-select" class="dev-select">
+                <option value="/profile">/profile</option>
+                <option value="/orders">/orders</option>
+                <option value="/payments/transfer">/payments/transfer</option>
+                <option value="/admin/users">/admin/users</option>
+                <option value="/admin/add_user">/admin/add_user</option>
+            </select>
+            <button id="dev-send-btn" class="dev-send-btn">Send</button>
+        </div>
+        <div class="dev-bulk-section">
+            <div class="dev-bulk-label">BULK REQUEST BURST</div>
+            <div class="dev-bulk-controls">
+                <button class="bulk-preset-btn" data-count="50">×50</button>
+                <button class="bulk-preset-btn" data-count="100">×100</button>
+                <button class="bulk-preset-btn" data-count="250">×250</button>
+                <button class="bulk-preset-btn" data-count="500">×500</button>
+                <input type="number" id="dev-bulk-count" value="100" min="1" max="1000" class="dev-bulk-input">
+                <button id="dev-send-bulk-btn" class="dev-bulk-btn">Send Bulk</button>
+                <button id="dev-stop-bulk-btn" class="dev-stop-btn" style="display:none;">Stop</button>
+            </div>
+            <div id="dev-bulk-progress" style="display:none;"></div>
+        </div>
+        <div id="dev-result" class="dev-result"></div>
+    </div>
+
+    <script src="/js/sentinelx-client.js?v=3"></script>
+    <script src="/js/orbit.js?v=3"></script>
+</body>
+</html>
