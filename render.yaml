@@ -1,10 +1,10 @@
 services:
   - type: web
     name: sentinelx-gateway
-    env: python
+    env: docker
     plan: free
-    buildCommand: "cd gateway && pip install -r requirements.txt"
-    startCommand: "cd gateway && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    dockerfilePath: ./gateway/Dockerfile
+    dockerContext: ./gateway
     envVars:
       - key: SENTINELX_ORIGIN_BASE_URL
         fromService:
@@ -21,10 +21,10 @@ services:
 
   - type: web
     name: origin-demo-service
-    env: python
+    env: docker
     plan: free
-    buildCommand: "cd demo-service && pip install -r requirements.txt"
-    startCommand: "cd demo-service && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    dockerfilePath: ./demo-service/Dockerfile
+    dockerContext: ./demo-service
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -33,10 +33,10 @@ services:
 
   - type: web
     name: sentinelx-orbit
-    env: python
+    env: docker
     plan: free
-    buildCommand: "cd orbit && pip install -r requirements.txt"
-    startCommand: "cd orbit && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    dockerfilePath: ./orbit/Dockerfile
+    dockerContext: ./orbit
     envVars:
       - key: GATEWAY_URL
         fromService:
@@ -48,10 +48,10 @@ services:
 
   - type: web
     name: sentinelx-stub
-    env: python
+    env: docker
     plan: free
-    buildCommand: "cd stub-service && pip install -r requirements.txt"
-    startCommand: "cd stub-service && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    dockerfilePath: ./stub-service/Dockerfile
+    dockerContext: ./stub-service
 
   - type: redis
     name: sentinelx-redis
