@@ -16,6 +16,7 @@ class SentinelXClient {
     constructor({ gatewayBase, identityId, sessionId, spoofGeo = null, spoofDevice = null }) {
         this.gatewayBase = gatewayBase.replace(/\/$/, '');
         this.identityId = identityId;
+        this._identityId = identityId; // Alias for external access
         this.sessionId = sessionId;
         this.spoofGeo = spoofGeo;
         this.spoofDevice = spoofDevice;
@@ -94,6 +95,10 @@ class SentinelXClient {
             return;
         }
         if (status === 401 && data.error === 'session_revoked') {
+            if (this._handlers.revoke) this._handlers.revoke(data);
+            return;
+        }
+        if (status === 401 && data.error === 'identity_revoked') {
             if (this._handlers.revoke) this._handlers.revoke(data);
             return;
         }

@@ -447,22 +447,32 @@ function onStepUp(data) {
 function onRestrict(data) {
     log(`🚫 Restricted by SentinelX (Score: ${data.risk_score})`, 'error');
     updateRiskGauge(data.risk_score);
-    const banner = document.getElementById('restriction-banner');
-    banner.classList.remove('hidden');
-    document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = true);
-    showToast('Rate limited by SentinelX. You are now read-only.', 'error');
+    const cooldown = data.cooldown_seconds || 60;
+    startRestrictCooldown(cooldown);
+    showToast(`Rate limited by SentinelX. Read-only for ${cooldown}s.`, 'error');
 }
 
 function onRevoke(data) {
     log(`💀 Session REVOKED by SentinelX (Score: ${data.risk_score})`, 'error');
     updateRiskGauge(data.risk_score);
-    showToast('CRITICAL: Session revoked. Logging out…', 'error');
+
+    const isIdentityRevoke = data.error === 'identity_revoked';
 
     // ── SAFETY CONSTRAINT: hard logout fires FIRST, synchronously ──
+    const revokedUserId = sx ? sx._identityId : null;
     sx = null;
     document.body.classList.add('revoke-shake');
     setTimeout(() => document.body.classList.remove('revoke-shake'), 600);
-    _syncLogout();
+
+    if (isIdentityRevoke && revokedUserId) {
+        // Identity-level revoke: show unlock screen instead of login
+        showToast('CRITICAL: Identity revoked. Contact your admin for an unlock code.', 'error');
+        _syncLogout();
+        showRevokeUnlockScreen(revokedUserId);
+    } else {
+        showToast('CRITICAL: Session revoked. Logging out…', 'error');
+        _syncLogout();
+    }
 
     // ── Cosmetic flash fires AFTER logout — purely decorative ──
     const flash = document.getElementById('revoke-flash');
@@ -525,6 +535,9 @@ document.getElementById('login-btn').addEventListener('click', async () => {
         } else {
             completeLogin(userId, profileRes.data);
         }
+    } else if (profileRes && profileRes.data && profileRes.data.error === 'identity_revoked') {
+        showToast('Your identity is locked. Contact your admin for an unlock code.', 'error');
+        showRevokeUnlockScreen(userId);
     } else {
         showToast('Login failed or denied by SentinelX', 'error');
     }
@@ -598,9 +611,11 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 
         if (target === 'admin-tab') {
             document.getElementById('load-users-btn').click();
+            loadLockedAccounts();
             adminPollInterval = setInterval(() => {
                 const loadBtn = document.getElementById('load-users-btn');
                 if (loadBtn) loadBtn.click();
+                loadLockedAccounts();
             }, 10000);
         }
     });
@@ -1062,6 +1077,7 @@ document.getElementById('dev-send-btn') && document.getElementById('dev-send-btn
             let color = "#f85149";
             if (res.status === 401 && res.data?.error === 'step_up_required')  { tier = "STEP-UP";  color = "#f59e0b"; window.pendingDevAction = () => document.getElementById('dev-send-btn').click(); }
             else if (res.status === 429 && res.data?.error === 'restricted')   { tier = "RESTRICT"; color = "#f97316"; }
+            else if (res.status === 401 && (res.data?.error === 'session_revoked' || res.data?.error === 'identity_revoked')) { tier = "REVOKE"; color = "#ef4444"; }
             else if (res.status === 403 && res.data?.error === 'session_revoked') { tier = "REVOKE"; color = "#ef4444"; }
 
             const risk  = res.data?.risk_score || "N/A";
@@ -1130,7 +1146,7 @@ document.getElementById('dev-send-bulk-btn') && document.getElementById('dev-sen
         if (res.ok)                                                        return 'ALLOW';
         if (res.status === 401 && res.data?.error === 'step_up_required') return 'STEP-UP';
         if (res.status === 429 && res.data?.error === 'restricted')        return 'RESTRICT';
-        if (res.status === 401 && res.data?.error === 'session_revoked')   return 'REVOKE';
+        if (res.status === 401 && (res.data?.error === 'session_revoked' || res.data?.error === 'identity_revoked'))   return 'REVOKE';
         return 'ERROR';
     }
 
@@ -1185,6 +1201,221 @@ document.getElementById('dev-send-bulk-btn') && document.getElementById('dev-sen
 ${escalation ? `<span style="color:#8b949e">${escalation}</span><br>` : ''}${earlyStop}`;
 
     log(`Bulk burst: ${sent}/${total} | ALLOW ${tally.ALLOW} | STEP-UP ${tally['STEP-UP']} | RESTRICT ${tally.RESTRICT} | REVOKE ${tally.REVOKE}`, 'info');
+});
+
+/* ════════════════════════════════════════════════
+   TIERED RECOVERY SYSTEM
+   ════════════════════════════════════════════════ */
+
+/* ─── Phase 2: RESTRICT cooldown with live countdown ─── */
+let _restrictCooldownTimer = null;
+
+function startRestrictCooldown(cooldownSeconds) {
+    const banner = document.getElementById('restriction-banner');
+    const textEl = document.getElementById('restriction-text');
+    const countdownEl = document.getElementById('restriction-countdown');
+    banner.classList.remove('hidden');
+    document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = true);
+
+    let remaining = cooldownSeconds;
+    textEl.textContent = 'Restricted due to unusual activity. Access will restore automatically if activity normalizes.';
+    countdownEl.textContent = `${remaining}s`;
+
+    if (_restrictCooldownTimer) clearInterval(_restrictCooldownTimer);
+    _restrictCooldownTimer = setInterval(() => {
+        remaining--;
+        countdownEl.textContent = `${remaining}s`;
+        if (remaining <= 0) {
+            clearInterval(_restrictCooldownTimer);
+            _restrictCooldownTimer = null;
+            banner.classList.add('hidden');
+            document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = false);
+            countdownEl.textContent = '';
+            textEl.textContent = 'Account restricted — read-only mode active.';
+            showToast('Restriction lifted. You can resume normal activity.', 'success');
+            log('✅ RESTRICT cooldown expired — access restored', 'success');
+        }
+    }, 1000);
+}
+
+/* ─── Phase 3: REVOKE unlock screen ─── */
+let _revokedIdentityId = null;
+
+function showRevokeUnlockScreen(identityId) {
+    _revokedIdentityId = identityId;
+    document.getElementById('revoke-unlock-identity').value = identityId;
+    document.getElementById('revoke-unlock-code').value = '';
+    document.getElementById('revoke-unlock-error').textContent = '';
+    switchView('revoke-unlock-view');
+}
+
+document.getElementById('revoke-unlock-btn') && document.getElementById('revoke-unlock-btn').addEventListener('click', async () => {
+    const code = document.getElementById('revoke-unlock-code').value.trim();
+    const errEl = document.getElementById('revoke-unlock-error');
+    errEl.textContent = '';
+
+    if (!code || code.length < 6) {
+        errEl.textContent = 'Please enter the 6-digit unlock code from your administrator.';
+        return;
+    }
+
+    const identityId = _revokedIdentityId || document.getElementById('revoke-unlock-identity').value;
+    setLoading('revoke-unlock-btn', true);
+
+    try {
+        const res = await fetch(`${GATEWAY_BASE}/unlock/verify`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ identity_id: identityId, code }),
+        });
+        const data = await res.json();
+
+        if (data.result === 'ok') {
+            showToast('Identity unlocked! You can now log in.', 'success');
+            _revokedIdentityId = null;
+            switchView('login-view');
+        } else if (data.result === 'expired') {
+            errEl.textContent = 'Unlock code has expired. Ask your administrator for a new one.';
+        } else if (data.result === 'used') {
+            errEl.textContent = 'This code has already been used. Request a new one.';
+        } else if (data.result === 'not_revoked') {
+            showToast('Your identity is no longer locked. Try logging in.', 'success');
+            switchView('login-view');
+        } else {
+            errEl.textContent = 'Incorrect code. Please try again.';
+        }
+    } catch (e) {
+        errEl.textContent = 'Could not reach the server. Try again.';
+    }
+
+    setLoading('revoke-unlock-btn', false);
+});
+
+document.getElementById('revoke-back-to-login') && document.getElementById('revoke-back-to-login').addEventListener('click', () => {
+    _revokedIdentityId = null;
+    switchView('login-view');
+});
+
+/* ─── Phase 4: Admin Locked Accounts panel ─── */
+async function loadLockedAccounts() {
+    if (!sx) return;
+    const listEl = document.getElementById('locked-accounts-list');
+    const badge = document.getElementById('locked-count-badge');
+
+    try {
+        const res = await sx.call('/admin/locked_accounts');
+        if (res && res.ok) {
+            const accounts = res.data.locked_accounts || [];
+            if (badge) {
+                badge.textContent = accounts.length;
+                badge.style.display = accounts.length > 0 ? 'inline-flex' : 'none';
+            }
+            if (accounts.length === 0) {
+                listEl.innerHTML = '<div class="empty-state"><p style="opacity:0.4">No locked accounts</p></div>';
+                return;
+            }
+            listEl.innerHTML = accounts.map((a, idx) => `
+                <div class="locked-account-card" style="--stagger-delay: ${idx * 40}ms">
+                    <div class="locked-account-info">
+                        <div class="locked-account-name">${a.name}</div>
+                        <div class="locked-account-id">${a.identity_id}</div>
+                        <span class="role-badge role-${a.role}">${a.role}</span>
+                    </div>
+                    <div class="locked-account-risk">
+                        <span class="locked-risk-score" style="color:#ef4444;">Score: ${a.risk_score}</span>
+                    </div>
+                    <div style="display:flex; gap: 8px;">
+                        <button class="btn-danger action-btn generate-unlock-btn" data-id="${a.identity_id}" data-name="${a.name}">
+                            🔑 Generate Unlock Code
+                        </button>
+                        <button class="btn-ghost direct-unlock-btn" data-id="${a.identity_id}" data-name="${a.name}" style="color:#10b981; border-color:rgba(16,185,129,0.3);">
+                            🔓 Direct Unlock
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+
+            listEl.querySelectorAll('.generate-unlock-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = e.currentTarget.dataset.id;
+                    const name = e.currentTarget.dataset.name;
+                    e.currentTarget.disabled = true;
+                    e.currentTarget.textContent = 'Generating…';
+
+                    try {
+                        const unlockRes = await sx.call('/admin/unlock/request', 'POST', { identity_id: id });
+                        if (unlockRes && unlockRes.ok) {
+                            const code = unlockRes.data.unlock_code;
+                            const ttl = unlockRes.data.ttl_seconds;
+                            showToast(`🔑 Unlock code for ${name}: ${code} (expires in ${ttl}s)`, 'success');
+                            log(`Admin generated unlock code for ${id}: ${code}`, 'success');
+                            e.currentTarget.textContent = `Code: ${code}`;
+                            e.currentTarget.style.background = '#10b981';
+                            e.currentTarget.style.color = '#fff';
+                        } else {
+                            showToast('Failed to generate unlock code', 'error');
+                            e.currentTarget.disabled = false;
+                            e.currentTarget.textContent = '🔑 Generate Unlock Code';
+                        }
+                    } catch (ex) {
+                        showToast('Error reaching gateway', 'error');
+                        e.currentTarget.disabled = false;
+                        e.currentTarget.textContent = '🔑 Generate Unlock Code';
+                    }
+                });
+            });
+
+            listEl.querySelectorAll('.direct-unlock-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const id = e.currentTarget.dataset.id;
+                    const name = e.currentTarget.dataset.name;
+                    e.currentTarget.disabled = true;
+                    e.currentTarget.textContent = '🔓 Unlocking…';
+
+                    try {
+                        const unlockRes = await sx.call('/admin/unlock/direct', 'POST', { identity_id: id });
+                        if (unlockRes && unlockRes.ok) {
+                            showToast(`🔓 Successfully unlocked ${name} and reset risk score.`, 'success');
+                            log(`Admin directly unlocked ${id}`, 'success');
+                            loadLockedAccounts(); // refresh list
+                        } else {
+                            showToast(`Failed to direct unlock ${name}`, 'error');
+                            e.currentTarget.disabled = false;
+                            e.currentTarget.textContent = '🔓 Direct Unlock';
+                        }
+                    } catch (ex) {
+                        showToast('Error reaching gateway', 'error');
+                        e.currentTarget.disabled = false;
+                        e.currentTarget.textContent = '🔓 Direct Unlock';
+                    }
+                });
+            });
+
+            log(`Loaded ${accounts.length} locked account(s)`, 'info');
+        }
+    } catch (e) {
+        // Silently fail for non-admin users
+    }
+}
+
+document.getElementById('refresh-locked-btn') && document.getElementById('refresh-locked-btn').addEventListener('click', loadLockedAccounts);
+
+/* ─── Dev Reset Locks button ─── */
+document.getElementById('dev-reset-locks-btn') && document.getElementById('dev-reset-locks-btn').addEventListener('click', async () => {
+    if (!sx) { showToast('Please log in first', 'error'); return; }
+    try {
+        const res = await sx.call('/admin/unlock/reset_all', 'POST');
+        if (res && res.ok) {
+            const count = res.data.count || 0;
+            showToast(`🔓 Cleared ${count} identity lock(s)`, 'success');
+            log(`Dev reset: cleared ${count} identity locks`, 'success');
+            loadLockedAccounts();
+        } else {
+            showToast('Failed to reset locks (admin role required)', 'error');
+        }
+    } catch (e) {
+        showToast('Error reaching gateway', 'error');
+    }
 });
 
 /* ════════════════════════════════════════════════

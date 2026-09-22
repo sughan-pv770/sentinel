@@ -220,7 +220,8 @@ h1, h2, h3, h4, h5 {
 /* ════════════════════════════════════════════════
    LOGIN PAGE
    ════════════════════════════════════════════════ */
-#login-view {
+#login-view,
+#revoke-unlock-view {
     display: none;
     min-height: 100vh;
     align-items: center;
@@ -233,7 +234,8 @@ h1, h2, h3, h4, h5 {
         radial-gradient(ellipse 40% 40% at 20% 60%, rgba(16,185,129,0.08) 0%, transparent 60%),
         var(--bg);
 }
-#login-view.active { display: flex; }
+#login-view.active,
+#revoke-unlock-view.active { display: flex; }
 
 .login-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 
@@ -1872,4 +1874,108 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; tra
     .skeleton-stat { animation: none; background: var(--surface-3); }
     #risk-arc     { transition: none; }
     #orders-sparkline { display: none; }
+}
+
+
+/* ════════════════════════════════════════════════
+   TIERED RECOVERY SYSTEM STYLES
+   ════════════════════════════════════════════════ */
+
+/* ── Restriction Countdown ── */
+.restriction-countdown {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 10px;
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    color: #ef4444;
+    animation: pulse-countdown 1s ease-in-out infinite;
+}
+@keyframes pulse-countdown {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* ── Locked Accounts Section ── */
+.locked-accounts-section {
+    margin-top: 8px;
+}
+
+.locked-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    background: var(--red);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    border-radius: 20px;
+    animation: badge-pulse 2s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+
+.locked-accounts-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.locked-account-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 18px;
+    background: var(--surface);
+    border: 1px solid var(--red-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--elev-1);
+    animation: stagger-enter 0.3s ease both;
+    animation-delay: var(--stagger-delay, 0ms);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.locked-account-card:hover {
+    border-color: var(--red);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.15);
+}
+
+.locked-account-info {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.locked-account-name {
+    font-weight: 600;
+    color: var(--text-1);
+    font-size: 14px;
+}
+.locked-account-id {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-3);
+}
+.locked-account-risk {
+    margin-right: 12px;
+}
+.locked-risk-score {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.generate-unlock-btn {
+    white-space: nowrap;
+    font-size: 12px;
+    padding: 6px 14px !important;
+    transition: background 0.3s, color 0.3s;
 }

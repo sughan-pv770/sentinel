@@ -34,6 +34,11 @@ class BaseStore:
     async def get_alerts(self, limit: int = 50) -> list: ...
     async def revoke_session(self, session_id: str): ...
     async def is_revoked(self, session_id: str) -> bool: ...
+    async def revoke_identity(self, identity_id: str): ...
+    async def is_identity_revoked(self, identity_id: str) -> bool: ...
+    async def unlock_identity(self, identity_id: str): ...
+    async def get_revoked_identities(self) -> list: ...
+    async def clear_all_revoked_identities(self): ...
     async def get_policy(self) -> dict: ...
     async def set_policy(self, policy: dict): ...
     async def stats(self) -> dict: ...
@@ -75,6 +80,7 @@ class InMemoryStore(BaseStore):
         self._risk_state: dict[str, dict] = {}
         self._alerts: deque = deque(maxlen=MAX_ALERTS)
         self._revoked: set[str] = set()
+        self._revoked_identities: set[str] = set()
         self._nonces: dict[str, set[str]] = defaultdict(set)
         self._policy: dict = json.loads(json.dumps(DEFAULT_POLICY))
         self._decisions: dict[str, deque] = defaultdict(lambda: deque(maxlen=50))
@@ -186,6 +192,21 @@ class InMemoryStore(BaseStore):
 
     async def is_revoked(self, session_id: str) -> bool:
         return session_id in self._revoked
+
+    async def revoke_identity(self, identity_id: str):
+        self._revoked_identities.add(identity_id)
+
+    async def is_identity_revoked(self, identity_id: str) -> bool:
+        return identity_id in self._revoked_identities
+
+    async def unlock_identity(self, identity_id: str):
+        self._revoked_identities.discard(identity_id)
+
+    async def get_revoked_identities(self) -> list:
+        return list(self._revoked_identities)
+
+    async def clear_all_revoked_identities(self):
+        self._revoked_identities.clear()
 
     async def get_policy(self) -> dict:
         return json.loads(json.dumps(self._policy))
@@ -330,6 +351,22 @@ class RedisStore(BaseStore):
 
     async def is_revoked(self, session_id: str) -> bool:
         return bool(await self.r.sismember("sentinelx:revoked", session_id))
+
+    async def revoke_identity(self, identity_id: str):
+        await self.r.sadd("sentinelx:revoked_identities", identity_id)
+
+    async def is_identity_revoked(self, identity_id: str) -> bool:
+        return bool(await self.r.sismember("sentinelx:revoked_identities", identity_id))
+
+    async def unlock_identity(self, identity_id: str):
+        await self.r.srem("sentinelx:revoked_identities", identity_id)
+
+    async def get_revoked_identities(self) -> list:
+        raw = await self.r.smembers("sentinelx:revoked_identities")
+        return list(raw)
+
+    async def clear_all_revoked_identities(self):
+        await self.r.delete("sentinelx:revoked_identities")
 
     async def get_policy(self) -> dict:
         raw = await self.r.get(self._policy_key)

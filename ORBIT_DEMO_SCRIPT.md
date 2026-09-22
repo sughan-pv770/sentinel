@@ -62,5 +62,35 @@ This 3-minute walkthrough demonstrates SentinelX protecting a real application (
 * **Observation (Browser):** The JSON response shows `{"status": "ok", "service": "stub"}`.
 * **Talking Point:** *"This is a completely separate 20-line microservice running on port 9002. By simply adding 5 lines to our `services.json`, SentinelX is now protecting it with full ML scoring and behavioral baselines. Zero gateway code changes were required to onboard it."*
 
+### 6. Recovery Workflow — Detection AND Graceful Recovery ⭐
+
+> **This is the moment that separates us from "block and done" demos. Most hackathon security projects stop at detection. We show the complete lifecycle: detect → block → recover → audit.**
+
+#### 6a. Trigger a REVOKE via Bulk Burst
+* **Action (Orbit):** Log in as **Alex Rao** (Member). Open the Dev Test Panel (visible in demo mode).
+* **Action (Orbit):** Click **Send Bulk ×100** to fire a burst of requests. Watch as the risk score climbs through ALLOW → STEP-UP → RESTRICT → REVOKE.
+* **Observation (Orbit):** When REVOKE fires, Orbit doesn't just show "Login failed" — it shows a **dedicated Revoke Unlock Screen**: *"Your session was terminated due to suspicious activity. Contact your administrator for an unlock code."* There's a code input field waiting for an admin OTP.
+* **Talking Point:** *"Notice the user isn't stuck at a dead-end error. They're told exactly what happened and exactly what to do — contact their admin. This is a designed recovery workflow, not a bug."*
+
+#### 6b. Admin Sees the Lock in Real Time
+* **Action (Orbit):** Open a second browser tab. Log in as **Priya Nair** (Admin).
+* **Action (Orbit):** Switch to the **Admin** tab. Scroll down to the **🔒 Locked Accounts** panel.
+* **Observation (Orbit):** Alex Rao appears in the locked accounts list with their risk score and a red badge showing "1" locked account.
+* **Talking Point:** *"The admin has real-time visibility into every locked identity — who's locked, why, and their risk score at the time of revocation. No digging through logs."*
+
+#### 6c. Admin Generates Unlock Code
+* **Action (Orbit):** Click **🔑 Generate Unlock Code** next to Alex's entry.
+* **Observation (Orbit):** An OTP code appears (displayed in a toast and on the button itself). The admin would relay this to Alex out-of-band (verbally, chat, etc.).
+* **Talking Point:** *"This OTP is separate from the normal step-up MFA system — it's a distinct code space, purpose-built for recovery. It's one-time use, expires in 5 minutes, and the generation itself is logged in the audit trail."*
+
+#### 6d. Member Recovers Access
+* **Action (Orbit):** Switch back to Alex's browser tab (showing the unlock screen). Enter the OTP code from step 6c and click **Submit Unlock Code**.
+* **Observation (Orbit):** Success — Alex is redirected to the login screen. Log in again as Alex. This time, login succeeds normally.
+* **Talking Point:** *"Alex is back in with a genuinely fresh session. The identity-level lock was lifted by a human-in-the-loop decision, not by the clock running out. And every step — the lock, the OTP generation, and the unlock — is in the audit trail."*
+
+#### 6e. (Optional) Dev Reset for Rehearsal
+* **Action (Orbit):** As admin, in the Dev Test Panel, click **🔓 Reset All Identity Locks** to clear all locks for the next demo run.
+* **Talking Point:** *"For development and rehearsal, we have a demo-only reset tool so we can run this showcase repeatedly without manual cleanup."*
+
 ## Wrap Up
-*"This demonstrates how SentinelX isn't just a passive monitor — it's an active gateway that transforms backend risk intelligence into real-time, user-facing security enforcements (MFA, rate limiting, and session revocation) without requiring any backend logic changes in the protected application."*
+*"This demonstrates how SentinelX isn't just a passive monitor — it's an active gateway that transforms backend risk intelligence into real-time, user-facing security enforcements (MFA, rate limiting, and session revocation) without requiring any backend logic changes in the protected application. And critically, it includes a complete, audited recovery workflow — because real security systems need to handle the 'what happens next' just as carefully as the initial detection."*

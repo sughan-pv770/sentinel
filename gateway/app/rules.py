@@ -27,6 +27,12 @@ async def evaluate_rules(ctx: RequestContext, fv: FeatureVector, store: BaseStor
     hard_trigger = False
     score = 0.0
 
+    # 0. Identity revoked
+    if await store.is_identity_revoked(ctx.identity_id):
+        reasons.append(Reason(code="identity_revoked",
+                               message="Identity has been revoked and requires admin unlock"))
+        return 100.0, True, reasons
+
     # 1. Token reuse after revocation
     if await store.is_revoked(ctx.session_id):
         reasons.append(Reason(code="token_used_after_revocation",

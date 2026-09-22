@@ -323,6 +323,84 @@ async def signup(data: SignupRequest, request: Request):
     return {"status": "created", "identity_id": uid, "name": data.name, "role": data.role}
 
 
+# ════════════════════════════════════════
+# 7. RECOVERY / UNLOCK (Tiered Recovery System)
+# ════════════════════════════════════════
+
+@app.get("/admin/locked_accounts")
+async def get_locked_accounts(current_user: dict = Depends(get_current_user_role)):
+    """Proxy: fetch locked (revoked) accounts from SentinelX Gateway."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admins only")
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            res = await client.get(f"{GATEWAY_URL}/sentinelx/unlock")
+            return res.json()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Gateway unreachable: {e}")
+
+
+@app.post("/admin/unlock/request")
+async def request_unlock(request: Request, current_user: dict = Depends(get_current_user_role)):
+    """Proxy: admin generates an unlock OTP for a revoked identity."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admins only")
+    body = await request.json()
+    body["admin_id"] = current_user["identity_id"]
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            res = await client.post(f"{GATEWAY_URL}/sentinelx/unlock/request", json=body)
+            if res.status_code != 200:
+                raise HTTPException(status_code=res.status_code, detail=res.json().get("detail", "Error"))
+            return res.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"Gateway unreachable: {e}")
+
+
+@app.post("/admin/unlock/direct")
+async def direct_unlock(request: Request, current_user: dict = Depends(get_current_user_role)):
+    """Proxy: admin directly unlocks a revoked identity and resets risk score."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admins only")
+    body = await request.json()
+    body["admin_id"] = current_user["identity_id"]
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            res = await client.post(f"{GATEWAY_URL}/sentinelx/unlock/direct", json=body)
+            if res.status_code != 200:
+                raise HTTPException(status_code=res.status_code, detail=res.json().get("detail", "Error"))
+            return res.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"Gateway unreachable: {e}")
+
+class UnlockVerifyRequest(BaseModel):
+    identity_id: str
+    code: str
+
+@app.post("/unlock/verify")
+async def verify_unlock(data: UnlockVerifyRequest):
+    """User-facing: locked-out member submits the admin-issued OTP to regain access."""
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            res = await client.post(f"{GATEWAY_URL}/sentinelx/unlock/verify", json=data.model_dump())
+            return res.json()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Gateway unreachable: {e}")
+
+
+@app.post("/admin/unlock/reset_all")
+async def reset_all_locks(current_user: dict = Depends(get_current_user_role)):
+    """DEV ONLY: Clear all identity-level revocations for fast demo rehearsal."""
+    if ORBIT_ENV != "demo":
+        raise HTTPException(status_code=403, detail="Not available outside demo mode")
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admins only")
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            res = await client.post(f"{GATEWAY_URL}/sentinelx/unlock/reset_all")
+            return res.json()
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Gateway unreachable: {e}")
 if ORBIT_ENV == "demo":
     # Stub: exists to let SentinelX score this combination for demo/testing purposes; not a real product action
     @app.post("/profile")

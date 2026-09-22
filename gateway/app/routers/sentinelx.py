@@ -223,3 +223,138 @@ async def list_registered_services():
     """List all services registered in services.json — proof of templatization."""
     from app.service_registry import list_services
     return {"services": list_services()}
+
+
+# ════════════════════════════════════════════════════════════════
+# UNLOCK / RECOVERY ENDPOINTS (Tiered Recovery System)
+# ════════════════════════════════════════════════════════════════
+
+@router.get("/unlock")
+async def get_locked_accounts():
+    """Return all currently identity-revoked accounts."""
+    store = get_store()
+    revoked_ids = await store.get_revoked_identities()
+    users = await store.list_users()
+    user_map = {u["identity_id"]: u for u in users}
+
+    locked = []
+    for rid in revoked_ids:
+        user_info = user_map.get(rid, {"identity_id": rid, "name": rid, "role": "unknown"})
+        risk_state = await store.get_risk_state(rid)
+        locked.append({
+            "identity_id": rid,
+            "name": user_info.get("name", rid),
+            "role": user_info.get("role", "unknown"),
+            "risk_score": risk_state.get("risk_score", 0),
+            "tier": "revoke",
+            "reasons": risk_state.get("reasons", []),
+        })
+    return {"locked_accounts": locked}
+
+
+@router.post("/unlock/request")
+async def request_unlock_code(payload: dict):
+    """Generate an admin-only Unlock OTP for a revoked identity.
+    Called by Orbit's admin panel — the OTP is shown only to the admin."""
+    import secrets
+
+    identity_id = payload.get("identity_id", "").strip()
+    admin_id = payload.get("admin_id", "unknown")
+    if not identity_id:
+        raise HTTPException(status_code=400, detail="identity_id is required")
+
+    store = get_store()
+    if not await store.is_identity_revoked(identity_id):
+        raise HTTPException(status_code=404, detail="Identity is not currently revoked")
+
+    otp_code = f"{secrets.randbelow(1000000):06d}"
+    challenge_id = f"unlock_{identity_id}"
+    await store.store_otp(challenge_id, otp_code, ttl_seconds=300)
+
+    # Audit: log the unlock request
+    import time
+    await store.add_alert({
+        "type": "unlock_request",
+        "identity_id": identity_id,
+        "admin_id": admin_id,
+        "timestamp": time.time(),
+        "message": f"Admin '{admin_id}' generated unlock code for revoked identity '{identity_id}'",
+    })
+    logger.info(f"UNLOCK REQUEST: admin={admin_id} identity={identity_id}")
+
+    return {
+        "identity_id": identity_id,
+        "challenge_id": challenge_id,
+        "unlock_code": otp_code,
+        "ttl_seconds": 300,
+    }
+
+
+@router.post("/unlock/verify")
+async def verify_unlock_code(payload: dict):
+    """Verify an unlock OTP submitted by a locked-out member.
+    On success, lifts the identity-level revocation so they can log in fresh."""
+    identity_id = payload.get("identity_id", "").strip()
+    code = payload.get("code", "").strip()
+    if not identity_id or not code:
+        raise HTTPException(status_code=400, detail="identity_id and code are required")
+
+    store = get_store()
+    if not await store.is_identity_revoked(identity_id):
+        return {"result": "not_revoked", "identity_id": identity_id}
+
+    challenge_id = f"unlock_{identity_id}"
+    result = await store.verify_otp(challenge_id, str(code))
+
+    if result == "ok":
+        await store.unlock_identity(identity_id)
+        # Audit: log the successful unlock
+        import time
+        await store.add_alert({
+            "type": "unlock_success",
+            "identity_id": identity_id,
+            "timestamp": time.time(),
+            "message": f"Identity '{identity_id}' successfully unlocked via admin OTP",
+        })
+        logger.info(f"UNLOCK SUCCESS: identity={identity_id}")
+
+    return {"result": result, "identity_id": identity_id}
+
+
+@router.post("/unlock/direct")
+async def direct_unlock(payload: dict):
+    """Directly unlock an account from the admin panel, bypassing OTP, and reset score."""
+    identity_id = payload.get("identity_id", "").strip()
+    admin_id = payload.get("admin_id", "unknown")
+    if not identity_id:
+        raise HTTPException(status_code=400, detail="identity_id is required")
+
+    store = get_store()
+    if not await store.is_identity_revoked(identity_id):
+        return {"result": "not_revoked", "identity_id": identity_id}
+
+    await store.unlock_identity(identity_id)
+    await store.set_risk_state(identity_id, {"risk_score": 0, "tier": "allow", "reasons": []})
+    
+    import time
+    await store.add_alert({
+        "type": "unlock_direct",
+        "identity_id": identity_id,
+        "admin_id": admin_id,
+        "timestamp": time.time(),
+        "message": f"Admin '{admin_id}' directly unlocked identity '{identity_id}' and reset risk score.",
+    })
+    logger.info(f"DIRECT UNLOCK SUCCESS: admin={admin_id} identity={identity_id}")
+
+    return {"result": "ok", "identity_id": identity_id}
+@router.post("/unlock/reset_all")
+async def reset_all_locks():
+    """DEV ONLY: Clear all identity-level revocations for fast demo rehearsal."""
+    if settings.environment == "production":
+        raise HTTPException(status_code=403, detail="Not available in production")
+
+    store = get_store()
+    revoked = await store.get_revoked_identities()
+    await store.clear_all_revoked_identities()
+    logger.info(f"DEV RESET: cleared {len(revoked)} identity locks")
+    return {"cleared": revoked, "count": len(revoked)}

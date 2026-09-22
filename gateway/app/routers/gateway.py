@@ -129,10 +129,17 @@ async def gateway_proxy(service: str, path: str, request: Request):
 
     if decision.tier == "revoke":
         await store.revoke_session(ctx.session_id)
+        
+        is_identity_revoked_reason = any(r.code == "identity_revoked" for r in decision.reasons)
+        if not is_identity_revoked_reason:
+            await store.revoke_identity(ctx.identity_id)
+            
+        error_type = "identity_revoked" if is_identity_revoked_reason else "session_revoked"
         return JSONResponse(
             status_code=401,
-            content={"error": "session_revoked", "risk_score": decision.risk_score,
-                     "reasons": [r.message for r in decision.reasons]},
+            content={"error": error_type, "risk_score": decision.risk_score,
+                     "reasons": [r.message for r in decision.reasons],
+                     "tier": decision.tier},
         )
 
     if decision.tier == "restrict":
@@ -140,7 +147,9 @@ async def gateway_proxy(service: str, path: str, request: Request):
             status_code=429,
             content={"error": "restricted", "risk_score": decision.risk_score,
                      "reasons": [r.message for r in decision.reasons],
-                     "action": decision.action},
+                     "action": decision.action,
+                     "cooldown_seconds": 60,
+                     "tier": decision.tier},
         )
 
     if decision.tier == "step_up":
