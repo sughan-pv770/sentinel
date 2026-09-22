@@ -2,6 +2,7 @@ services:
   - type: web
     name: sentinelx-gateway
     env: python
+    plan: free
     buildCommand: "cd gateway && pip install -r requirements.txt"
     startCommand: "cd gateway && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
@@ -21,6 +22,7 @@ services:
   - type: web
     name: origin-demo-service
     env: python
+    plan: free
     buildCommand: "cd demo-service && pip install -r requirements.txt"
     startCommand: "cd demo-service && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
@@ -32,6 +34,7 @@ services:
   - type: web
     name: sentinelx-orbit
     env: python
+    plan: free
     buildCommand: "cd orbit && pip install -r requirements.txt"
     startCommand: "cd orbit && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
@@ -46,6 +49,7 @@ services:
   - type: web
     name: sentinelx-stub
     env: python
+    plan: free
     buildCommand: "cd stub-service && pip install -r requirements.txt"
     startCommand: "cd stub-service && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 
@@ -58,3 +62,4 @@ databases:
   - name: origin-db
     databaseName: origin
     user: origin
+    plan: free
