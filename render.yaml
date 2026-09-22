@@ -29,6 +29,26 @@ services:
           name: origin-db
           property: connectionString
 
+  - type: web
+    name: sentinelx-orbit
+    env: python
+    buildCommand: "cd orbit && pip install -r requirements.txt"
+    startCommand: "cd orbit && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: GATEWAY_URL
+        fromService:
+          type: web
+          name: sentinelx-gateway
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: ORBIT_ENV
+        value: demo
+
+  - type: web
+    name: sentinelx-stub
+    env: python
+    buildCommand: "cd stub-service && pip install -r requirements.txt"
+    startCommand: "cd stub-service && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+
   - type: redis
     name: sentinelx-redis
     ipAllowList: []
