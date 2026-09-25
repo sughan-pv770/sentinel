@@ -1419,6 +1419,19 @@ body {
   display: flex;
 }
 
+/* ═════ TAB: IMMUNE ═════ */
+#content-immune {
+  display: none;
+  overflow-y: auto;
+  padding: 32px 24px 80px 24px;
+  width: 100%;
+  height: 100%;
+}
+
+#content-immune.active {
+  display: block;
+}
+
 .users-page {
   width: 100%;
   max-width: 1000px;
