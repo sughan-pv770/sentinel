@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, String, Boolean, ForeignKey, MetaData, Table
+from sqlalchemy import create_engine, Column, String, Boolean, MetaData, Table, text
 
 # Database configuration
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./orbit.db")
@@ -27,18 +27,26 @@ users_table = Table(
     Column("identity_id", String, primary_key=True),
     Column("name", String, nullable=False),
     Column("role", String, nullable=False),
-    Column("password_not_set", Boolean, default=False)
+    Column("password_not_set", Boolean, default=False),
+    # sync_status: 'pending' | 'synced' | 'failed'
+    # Tracks whether this user has been registered with the SentinelX Gateway.
+    Column("sync_status", String, default="synced"),
 )
 
 def init_db():
     metadata.create_all(engine)
+    # Migrate: add sync_status column if it doesn't exist yet (SQLite-safe migration)
     with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN sync_status VARCHAR DEFAULT 'synced'"))
+        except Exception:
+            pass  # Column already exists
         from sqlalchemy import select
         res = conn.execute(select(users_table)).fetchone()
         if not res:
             default_users = [
-                {"identity_id": "u_admin", "name": "Priya Nair", "role": "admin"},
-                {"identity_id": "u_alex", "name": "Alex Rao", "role": "student"},
+                {"identity_id": "u_admin", "name": "Priya Nair", "role": "admin", "sync_status": "synced"},
+                {"identity_id": "u_alex", "name": "Alex Rao", "role": "student", "sync_status": "synced"},
             ]
             conn.execute(users_table.insert(), default_users)
             
@@ -64,7 +72,8 @@ def _create_local_user(conn, gw_user: dict):
             "identity_id": gw_user["identity_id"],
             "name": gw_user["name"],
             "role": gw_user.get("role", "student"),
-            "password_not_set": True
+            "password_not_set": True,
+            "sync_status": "synced",  # pulled from gateway, so already synced
         })
         return True
     return False
@@ -101,6 +110,8 @@ class UserResponse(BaseModel):
     identity_id: str
     name: str
     role: str
+    sync_status: Optional[str] = "synced"
+
 
 # --- Auth Middleware ---
 async def get_current_user_role(request: Request):
@@ -233,25 +244,89 @@ async def remove_user(request: Request, current_user: dict = Depends(get_current
 async def add_user(user_data: UserCreate, request: Request, current_user: dict = Depends(get_current_user_role)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admins only")
+
+    # PHASE 1: Always create local Orbit record first (local-first creation).
+    # Gateway sync failure must NEVER prevent the user from being created locally.
+    sync_status = "pending"
     with engine.begin() as conn:
         from sqlalchemy import select
         existing = conn.execute(
             select(users_table).where(users_table.c.identity_id == user_data.identity_id)
         ).fetchone()
         if not existing:
-            conn.execute(users_table.insert(), user_data.model_dump())
+            conn.execute(users_table.insert(), {**user_data.model_dump(), "sync_status": sync_status})
 
-    # Auto-register with SentinelX gateway
+    # PHASE 1: Immediately attempt gateway sync — use raise_for_status so errors are never silent.
+    gateway_error = None
     async with httpx.AsyncClient(timeout=3.0) as client:
         try:
             res = await client.post(f"{GATEWAY_URL}/sentinelx/users", json=user_data.model_dump())
-            res.raise_for_status()
-            print(f"Gateway: registered {user_data.identity_id}")
+            res.raise_for_status()  # Raises on 4xx/5xx — do NOT suppress
+            sync_status = "synced"
+            print(f"Gateway: registered {user_data.identity_id} (status {res.status_code})")
         except Exception as e:
-            print(f"Gateway registration failed: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to register user on Gateway: {e}")
+            sync_status = "failed"
+            gateway_error = str(e)
+            print(f"ERROR: Gateway registration failed for {user_data.identity_id}: status={getattr(getattr(e, 'response', None), 'status_code', 'N/A')} body={gateway_error}")
 
-    return {"status": "created", "user": user_data.model_dump()}
+    # PHASE 1: Update sync_status to reflect actual outcome.
+    with engine.begin() as conn:
+        conn.execute(
+            users_table.update()
+            .where(users_table.c.identity_id == user_data.identity_id)
+            .values(sync_status=sync_status)
+        )
+
+    return {
+        "status": "created",
+        "user": {**user_data.model_dump(), "sync_status": sync_status},
+        "gateway_sync": sync_status,
+        "gateway_error": gateway_error,
+    }
+
+
+@app.post("/admin/retry_sync")
+async def retry_sync(request: Request, current_user: dict = Depends(get_current_user_role)):
+    """PHASE 1/2: Retry gateway sync for a user whose sync_status = 'failed'.
+    Called from the Retry Sync button on the Admin Users view."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admins only")
+    body = await request.json()
+    uid = body.get("identity_id")
+    if not uid:
+        raise HTTPException(status_code=400, detail="identity_id is required")
+
+    with engine.connect() as conn:
+        from sqlalchemy import select
+        row = conn.execute(select(users_table).where(users_table.c.identity_id == uid)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user = dict(row._mapping)
+    gateway_error = None
+    async with httpx.AsyncClient(timeout=3.0) as client:
+        try:
+            res = await client.post(f"{GATEWAY_URL}/sentinelx/users", json={
+                "identity_id": user["identity_id"],
+                "name": user["name"],
+                "role": user["role"],
+            })
+            res.raise_for_status()
+            sync_status = "synced"
+            print(f"Retry sync succeeded for {uid}")
+        except Exception as e:
+            sync_status = "failed"
+            gateway_error = str(e)
+            print(f"Retry sync still failing for {uid}: {e}")
+
+    with engine.begin() as conn:
+        conn.execute(
+            users_table.update()
+            .where(users_table.c.identity_id == uid)
+            .values(sync_status=sync_status)
+        )
+
+    return {"identity_id": uid, "sync_status": sync_status, "gateway_error": gateway_error}
 
 
 # ════════════════════════════════════════
@@ -305,22 +380,47 @@ async def signup(data: SignupRequest, request: Request):
 
     uid = f"u_{data.name.lower().replace(' ', '_')}_{random.randint(100, 999)}"
 
-    # Write to Orbit's own DB
+    # PHASE 1: Write to Orbit's own DB first — local-first creation.
+    # Signup is never blocked by a gateway failure; sync failure is tracked and visible.
     with engine.begin() as conn:
-        conn.execute(users_table.insert(), {"identity_id": uid, "name": data.name, "role": data.role})
+        conn.execute(users_table.insert(), {
+            "identity_id": uid, "name": data.name, "role": data.role,
+            "sync_status": "pending",
+        })
 
-    # Auto-register with SentinelX — this is what makes them scoreable immediately
+    # PHASE 1: Attempt gateway registration — use raise_for_status, log actual error on failure.
+    sync_status = "pending"
+    gateway_error = None
     async with httpx.AsyncClient(timeout=3.0) as client:
         try:
-            await client.post(f"{GATEWAY_URL}/sentinelx/users", json={
+            res = await client.post(f"{GATEWAY_URL}/sentinelx/users", json={
                 "identity_id": uid, "name": data.name, "role": data.role,
             })
-            print(f"Signup: registered {uid} with SentinelX")
+            res.raise_for_status()  # Raises on 4xx/5xx — errors are never silent
+            sync_status = "synced"
+            print(f"Signup: registered {uid} with SentinelX (status {res.status_code})")
         except Exception as e:
-            # Non-fatal — log and continue, do not block signup
-            print(f"WARNING: SentinelX registration failed for {uid}: {e}")
+            sync_status = "failed"
+            gateway_error = str(e)
+            # Non-fatal for the user's signup — but logged explicitly, not swallowed
+            print(f"WARNING: SentinelX registration failed for {uid}: status={getattr(getattr(e, 'response', None), 'status_code', 'N/A')} body={gateway_error}")
 
-    return {"status": "created", "identity_id": uid, "name": data.name, "role": data.role}
+    # PHASE 1: Persist accurate sync_status regardless of outcome.
+    with engine.begin() as conn:
+        conn.execute(
+            users_table.update()
+            .where(users_table.c.identity_id == uid)
+            .values(sync_status=sync_status)
+        )
+
+    return {
+        "status": "created",
+        "identity_id": uid,
+        "name": data.name,
+        "role": data.role,
+        "sync_status": sync_status,
+        "gateway_error": gateway_error,
+    }
 
 
 # ════════════════════════════════════════

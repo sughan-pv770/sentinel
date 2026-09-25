@@ -771,18 +771,40 @@ document.getElementById('load-users-btn').addEventListener('click', async () => 
 
     if (res && res.ok) {
         const users = res.data.users || [];
-        const html  = users.map((u, idx) => `
-            <div class="user-card" style="--stagger-delay: ${idx * 40}ms">
+        const html  = users.map((u, idx) => {
+            // PHASE 2: sync_status pill — always visible on card
+            const syncStatus = u.sync_status || 'synced';
+            const syncPill = syncStatus === 'synced'
+                ? `<span class="sync-pill sync-ok" title="Registered on Gateway">✅ Registered on Gateway</span>`
+                : syncStatus === 'failed'
+                    ? `<span class="sync-pill sync-fail" title="Gateway sync failed — use Retry Sync to re-attempt">❌ Gateway Sync Failed</span>`
+                    : `<span class="sync-pill sync-pending" title="Sync pending">⏳ Sync Pending</span>`;
+
+            // PHASE 2: warning badge on card header for failed syncs so admin can't miss them
+            const failedBadge = syncStatus === 'failed'
+                ? `<span class="sync-warning-badge" title="Gateway sync failed">⚠</span>`
+                : '';
+
+            // PHASE 2: Retry Sync button only shown for non-synced users
+            const retryBtn = syncStatus !== 'synced'
+                ? `<button class="action-btn btn-warning retry-sync-btn" data-id="${u.identity_id}" title="Re-attempt gateway registration">🔄 Retry Sync</button>`
+                : '';
+
+            return `
+            <div class="user-card${syncStatus === 'failed' ? ' user-card-sync-failed' : ''}" style="--stagger-delay: ${idx * 40}ms" data-identity="${u.identity_id}">
                 <div class="user-card-header">
-                    <h4 class="user-card-name">${u.name}</h4>
+                    <h4 class="user-card-name">${u.name}${failedBadge}</h4>
                     <span class="role-badge role-${u.role}">${u.role}</span>
                 </div>
                 <div class="user-card-id">${u.identity_id}</div>
+                <div class="user-card-sync-row">${syncPill}</div>
                 <div class="user-card-actions">
                     <button class="action-btn btn-secondary edit-role-btn" data-id="${u.identity_id}">Edit Role</button>
+                    ${retryBtn}
                     <button class="action-btn btn-danger remove-user-btn" data-id="${u.identity_id}">Remove</button>
                 </div>
-            </div>`).join('');
+            </div>`;
+        }).join('');
 
         document.getElementById('admin-data').innerHTML = `<div class="user-card-grid">${html}</div>`;
 
@@ -810,13 +832,39 @@ document.getElementById('load-users-btn').addEventListener('click', async () => 
                 if (delRes && delRes.ok) {
                     showToast(`User ${id} removed`, 'success');
                     log(`User removed: ${id}`, 'success');
-                    // Phase 5: exit animation
                     if (card) {
                         card.classList.add('removing');
                         setTimeout(() => document.getElementById('load-users-btn').click(), 220);
                     } else {
                         document.getElementById('load-users-btn').click();
                     }
+                }
+            });
+        });
+
+        // PHASE 2: Retry Sync button handler — re-POSTs to /admin/retry_sync and updates card live
+        document.querySelectorAll('.retry-sync-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.dataset.id;
+                e.target.disabled = true;
+                e.target.textContent = '⏳ Retrying…';
+
+                const retryRes = await sx.call('/admin/retry_sync', 'POST', { identity_id: id });
+
+                if (retryRes && retryRes.ok) {
+                    const newStatus = retryRes.data.sync_status;
+                    if (newStatus === 'synced') {
+                        showToast(`✅ ${id} successfully registered on Gateway`, 'success');
+                        log(`Retry sync succeeded for ${id}`, 'success');
+                    } else {
+                        showToast(`❌ Retry failed for ${id}: ${retryRes.data.gateway_error || 'Gateway unreachable'}`, 'error');
+                        log(`Retry sync still failing for ${id}`, 'error');
+                    }
+                    document.getElementById('load-users-btn').click();
+                } else {
+                    showToast('Retry Sync request failed', 'error');
+                    e.target.disabled = false;
+                    e.target.textContent = '🔄 Retry Sync';
                 }
             });
         });
@@ -856,14 +904,21 @@ document.getElementById('add-user-btn') && document.getElementById('add-user-btn
     setLoading('add-user-btn', false);
 
     if (res && res.ok) {
-        showToast(`User ${name} added and registered with SentinelX ✅`, 'success');
-        log(`Admin added user: ${uid} (${role})`, 'success');
+        // PHASE 2: Local account was always created. Check gateway sync outcome separately.
+        const syncStatus = res.data?.gateway_sync || res.data?.user?.sync_status || 'synced';
+        if (syncStatus === 'synced') {
+            showToast(`\u2705 ${name} created and registered on Gateway`, 'success');
+            log(`Admin added user: ${uid} (${role}) — Gateway: \u2705 synced`, 'success');
+        } else {
+            showToast(`\u26a0\ufe0f ${name} created locally but Gateway Sync Failed — use Retry Sync`, 'warn');
+            log(`Admin added user: ${uid} (${role}) — Gateway: \u274c sync failed`, 'warn');
+        }
         triggerSuccessBurst(document.getElementById('add-user-btn'));
         closeAddUserModal();
         document.getElementById('load-users-btn').click();
     } else {
         const errorDetail = res?.data?.detail || 'Unknown error';
-        showToast(`Gateway Sync Failed ❌: ${errorDetail}`, 'error');
+        showToast(`Failed to create user: ${errorDetail}`, 'error');
         log(`Admin add user failed for ${uid}: ${errorDetail}`, 'error');
     }
 });

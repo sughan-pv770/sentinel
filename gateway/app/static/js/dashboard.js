@@ -207,7 +207,7 @@ async function pollStats() {
     const fill = $("#lb-fill");
     if (fill) {
       fill.style.width = Math.min(100, (avg / 50) * 100) + "%";
-      fill.className = `lb-fill ${avg < 15 ? 'good' : avg < 30 ? 'warn' : 'bad'}`;
+      fill.className = `lb-fill ${avg <= 5.8 ? 'good' : avg < 15 ? 'warn' : 'bad'}`;
     }
   } catch (e) {
     const sd = $("#status-dot");

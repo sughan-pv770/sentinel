@@ -20,6 +20,7 @@ from app.state_store import InMemoryStore
 def _make_ctx(**overrides) -> RequestContext:
     """Helper to create a RequestContext with sensible defaults."""
     defaults = {
+        "service": "orbit",
         "identity_id": "test_user",
         "session_id": "sess_001",
         "endpoint": "/profile",

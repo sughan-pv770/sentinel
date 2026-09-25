@@ -58,6 +58,8 @@ SentinelX is a real-time, ML-powered **Zero Trust gateway** that sits in front o
 - ✅ Redis-backed state store with pipeline batching
 - ✅ Multi-worker Uvicorn config for horizontal scale
 - ✅ Known limitations documented honestly (`JWT_LIMITATION.md`, `DB_MIGRATION_PATH.md`)
+- ℹ️ **Data Note**: Model trained on 4,000 synthetic microservice telemetry traces representing baseline user behaviors.
+- ℹ️ **Resiliency**: Fail-safe operational design — automatically falls back to in-memory store if Redis is unavailable.
 
 ---
 

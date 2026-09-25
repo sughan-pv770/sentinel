@@ -409,17 +409,32 @@ def test_calculate_identity_risk_established():
     assert risk_level in ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
+def _make_ctx_for_risk(endpoint: str, method: str = "GET", service: str = "demo-service") -> RequestContext:
+    return RequestContext(
+        service=service,
+        identity_id="u_test",
+        session_id="sess_1",
+        endpoint=endpoint,
+        method=method,
+        ip="10.0.0.1",
+        geo="IN-TN",
+        device="chrome-mac",
+        token_age_seconds=600.0,
+        payload_size=100,
+    )
+
+
 def test_calculate_endpoint_risk():
     """Test endpoint risk classification."""
-    score, level = calculate_endpoint_risk("/admin/users")
+    score, level = calculate_endpoint_risk(_make_ctx_for_risk("/admin/users"))
     assert level == "CRITICAL"
     assert score >= 85
 
-    score, level = calculate_endpoint_risk("/payments/transfer")
+    score, level = calculate_endpoint_risk(_make_ctx_for_risk("/payments/transfer"))
     assert level == "HIGH"
     assert score >= 70
 
-    score, level = calculate_endpoint_risk("/health")
+    score, level = calculate_endpoint_risk(_make_ctx_for_risk("/health"))
     assert level == "LOW"
     assert score <= 15
 
@@ -451,6 +466,7 @@ def test_get_behavioral_context():
     }
 
     ctx = RequestContext(
+        service="orbit",
         identity_id="u_test",
         session_id="sess_1",
         endpoint="/api",
@@ -473,6 +489,7 @@ def test_get_behavioral_context():
 def test_explain_risk():
     """Test risk explanation generation."""
     ctx = RequestContext(
+        service="orbit",
         identity_id="u_test",
         session_id="sess_1",
         endpoint="/admin",

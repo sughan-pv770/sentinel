@@ -100,6 +100,13 @@ async def get_users():
 
 @router.post("/users")
 async def add_user_endpoint(user_data: dict):
+    """
+    PHASE 3 — Single Creation Path Enforcement:
+    This API endpoint MUST remain functional; Orbit calls it every time a user is
+    created through signup or Admin Add User. However, the gateway's own UI (Users tab)
+    intentionally has NO Add User form — users can only be created through Orbit.
+    Do NOT add a UI form here. The read-only Users view in dashboard.html enforces this.
+    """
     identity_id = user_data.get("identity_id", "").strip()
     name = user_data.get("name", "").strip()
     role = user_data.get("role", "student")

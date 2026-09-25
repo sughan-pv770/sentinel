@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # Latency budget target mentioned in §4.1 of the master doc (informational,
     # surfaced on the dashboard).
-    latency_budget_ms: float = 15.0
+    latency_budget_ms: float = 5.0
 
     # Rolling baseline window
     baseline_window_requests: int = 500

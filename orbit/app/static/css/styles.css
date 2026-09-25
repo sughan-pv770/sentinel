@@ -1184,6 +1184,88 @@ button { font-family: inherit; cursor: pointer; border: none; outline: none; tra
 .role-student { background: rgba(59,130,246,0.12);  color: #60a5fa;  border: 1px solid rgba(59,130,246,0.2); }
 .role-service { background: rgba(16,185,129,0.12);  color: #34d399;  border: 1px solid rgba(16,185,129,0.2); }
 
+/* ─── SYNC STATUS (Phase 2) ─── */
+.user-card-sync-row {
+    margin: 8px 0 4px;
+    position: relative;
+    z-index: 1;
+}
+.sync-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+.sync-ok {
+    background: rgba(16,185,129,0.12);
+    color: #34d399;
+    border: 1px solid rgba(16,185,129,0.25);
+}
+.sync-fail {
+    background: rgba(239,68,68,0.12);
+    color: #f87171;
+    border: 1px solid rgba(239,68,68,0.3);
+    animation: sync-fail-pulse 2.5s ease-in-out infinite;
+}
+.sync-pending {
+    background: rgba(245,158,11,0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(245,158,11,0.25);
+}
+@keyframes sync-fail-pulse {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: 0 0 0 3px rgba(239,68,68,0.15); }
+}
+
+/* Warning badge next to user name for failed sync */
+.sync-warning-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    margin-left: 6px;
+    color: #f59e0b;
+    animation: badge-pulse 1.8s ease-in-out infinite;
+}
+@keyframes badge-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.15); }
+}
+
+/* Red-tinted card border for failed-sync users — impossible to miss */
+.user-card-sync-failed {
+    border-color: rgba(239,68,68,0.35) !important;
+    box-shadow: 0 0 0 1px rgba(239,68,68,0.15), inset 0 0 40px rgba(239,68,68,0.04);
+}
+
+/* Retry Sync button */
+.btn-warning {
+    background: rgba(245,158,11,0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(245,158,11,0.3);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.btn-warning:hover {
+    background: rgba(245,158,11,0.22);
+    color: #fff;
+    transform: translateY(-1px);
+}
+.btn-warning:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* ─── EMPTY STATE ─── */
 .empty-state {
     display: flex;

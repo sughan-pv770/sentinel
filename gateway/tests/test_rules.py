@@ -21,6 +21,7 @@ from app.state_store import InMemoryStore
 
 def _make_ctx(**overrides) -> RequestContext:
     defaults = {
+        "service": "orbit",
         "identity_id": "test_user",
         "session_id": "sess_001",
         "endpoint": "/profile",
@@ -110,14 +111,14 @@ async def test_privilege_escalation_on_admin_endpoint(store):
     """First-ever access to /admin/* with endpoint_novelty=1 must trigger."""
     await _prime(store, "priv_user", endpoint="/profile", count=3)
 
-    ctx = _make_ctx(identity_id="priv_user", endpoint="/admin/users")
+    ctx = _make_ctx(identity_id="priv_user", endpoint="/admin/users", service="demo-service")
     fv = _make_fv(endpoint_novelty=1.0)
 
     score, triggered, reasons = await evaluate_rules(ctx, fv, store)
 
     assert triggered is True, "Privilege escalation should trigger"
-    assert score >= 60, "Privilege escalation adds 60 to score"
-    assert any(r.code == "privilege_escalation_attempt" for r in reasons)
+    assert score >= 50, "Sensitive endpoint access adds 45+ points"
+    assert any(r.code in ("privilege_escalation_attempt", "sensitive_endpoint_access") for r in reasons)
 
 
 @pytest.mark.asyncio
@@ -139,12 +140,12 @@ async def test_payments_endpoint_triggers_escalation(store):
     """The /payments prefix should also be considered sensitive."""
     await _prime(store, "pay_user", endpoint="/profile", count=3)
 
-    ctx = _make_ctx(identity_id="pay_user", endpoint="/payments/transfer")
+    ctx = _make_ctx(identity_id="pay_user", endpoint="/payments/transfer", service="demo-service")
     fv = _make_fv(endpoint_novelty=1.0)
 
     score, triggered, reasons = await evaluate_rules(ctx, fv, store)
 
-    assert any(r.code == "privilege_escalation_attempt" for r in reasons), \
+    assert any(r.code in ("privilege_escalation_attempt", "sensitive_endpoint_access") for r in reasons), \
         "/payments must be treated as sensitive"
 
 
