@@ -5,38 +5,38 @@
    PHASE 1 — DESIGN TOKENS (extended)
    ════════════════════════════════════════════════ */
 :root {
-    /* ── Palette ── */
-    --bg:           #080c14;
-    --bg-2:         #0d1321;
-    --surface:      #111827;
-    --surface-2:    #1a2235;
-    --surface-3:    #1f2a3c;
-    --border:       rgba(255,255,255,0.07);
-    --border-hover: rgba(255,255,255,0.14);
+    /* ── Palette (Light Theme) ── */
+    --bg:           #f0f4f8;
+    --bg-2:         #e8eef5;
+    --surface:      #ffffff;
+    --surface-2:    #f5f7fa;
+    --surface-3:    #edf0f5;
+    --border:       rgba(0,0,0,0.08);
+    --border-hover: rgba(0,0,0,0.15);
 
-    --text-1: #f1f5f9;
-    --text-2: #94a3b8;
-    --text-3: #64748b;   /* Phase 6: bumped from #475569 → #64748b for AA contrast */
+    --text-1: #0f172a;
+    --text-2: #475569;
+    --text-3: #94a3b8;
 
-    --blue:        #3b82f6;
-    --blue-light:  #60a5fa;
-    --blue-dim:    rgba(59, 130, 246, 0.12);
-    --blue-glow:   rgba(59, 130, 246, 0.25);
+    --blue:        #2563eb;
+    --blue-light:  #3b82f6;
+    --blue-dim:    rgba(37, 99, 235, 0.10);
+    --blue-glow:   rgba(37, 99, 235, 0.20);
 
-    --purple:      #8b5cf6;
-    --purple-dim:  rgba(139, 92, 246, 0.12);
+    --purple:      #7c3aed;
+    --purple-dim:  rgba(124, 58, 237, 0.10);
 
-    --green:       #10b981;
-    --green-dim:   rgba(16, 185, 129, 0.12);
+    --green:       #059669;
+    --green-dim:   rgba(5, 150, 105, 0.10);
 
-    --yellow:      #f59e0b;
-    --yellow-dim:  rgba(245, 158, 11, 0.12);
+    --yellow:      #d97706;
+    --yellow-dim:  rgba(217, 119, 6, 0.10);
 
-    --red:         #ef4444;
-    --red-dim:     rgba(239, 68, 68, 0.10);
-    --red-border:  rgba(239, 68, 68, 0.30);
+    --red:         #dc2626;
+    --red-dim:     rgba(220, 38, 38, 0.08);
+    --red-border:  rgba(220, 38, 38, 0.25);
 
-    --orange:      #f97316;
+    --orange:      #ea580c;
 
     /* ── Spacing / Shape ── */
     --sidebar-w:   240px;
@@ -45,30 +45,30 @@
     --radius-lg:   16px;
     --radius-xl:   24px;
 
-    /* ── Phase 1: Elevation Levels 1-5 ── */
-    --elev-1: 0 1px 2px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.04);
-    --elev-2: 0 2px 8px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.05);
-    --elev-3: 0 4px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.06);
-    --elev-4: 0 8px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.07);
-    --elev-5: 0 16px 48px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.08);
+    /* ── Elevation (light-mode shadows use soft colour tints) ── */
+    --elev-1: 0 1px 3px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04);
+    --elev-2: 0 2px 8px rgba(0,0,0,0.09), 0 0 0 1px rgba(0,0,0,0.05);
+    --elev-3: 0 4px 16px rgba(0,0,0,0.10), 0 0 0 1px rgba(0,0,0,0.06);
+    --elev-4: 0 8px 28px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.07);
+    --elev-5: 0 16px 48px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.08);
 
-    /* Legacy aliases (keep existing JS/CSS references working) */
+    /* Legacy aliases */
     --shadow-sm:   var(--elev-1);
     --shadow-md:   var(--elev-3);
     --shadow-lg:   var(--elev-5);
 
-    /* ── Phase 1: Glass / Blur Token ── */
-    --glass-bg:     rgba(17, 24, 39, 0.75);
+    /* ── Glass / Blur Token ── */
+    --glass-bg:     rgba(255, 255, 255, 0.75);
     --glass-blur:   blur(16px);
-    --glass-border: rgba(255,255,255,0.10);
+    --glass-border: rgba(0,0,0,0.08);
 
-    /* ── Phase 1: Glow Token ── */
-    --glow-blue:    0 0 0 3px rgba(59, 130, 246, 0.35);
-    --glow-red:     0 0 0 3px rgba(239, 68, 68, 0.35);
-    --glow-green:   0 0 0 3px rgba(16, 185, 129, 0.30);
-    --shadow-glow:  var(--glow-blue); /* legacy alias */
+    /* ── Glow Tokens ── */
+    --glow-blue:    0 0 0 3px rgba(37, 99, 235, 0.25);
+    --glow-red:     0 0 0 3px rgba(220, 38, 38, 0.25);
+    --glow-green:   0 0 0 3px rgba(5, 150, 105, 0.20);
+    --shadow-glow:  var(--glow-blue);
 
-    /* ── Phase 1: Z-Index Scale ── */
+    /* ── Z-Index Scale ── */
     --z-base:      1;
     --z-dropdown:  100;
     --z-modal:     1000;
@@ -78,6 +78,9 @@
     /* ── Easing ── */
     --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
     --ease-out:    cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* ── Accent alias used by simulate-hijack inline style ── */
+    --accent-red: #dc2626;
 }
 
 /* ── Phase 1: Gradient Mesh (with @supports degradation) ── */
@@ -87,9 +90,9 @@
 
 .gradient-mesh-bg {
     background:
-        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(59,130,246,0.18) 0%, transparent 70%),
-        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139,92,246,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 40% at 20% 60%, rgba(16,185,129,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(37,99,235,0.10) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(124,58,237,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 20% 60%, rgba(5,150,105,0.05) 0%, transparent 60%),
         var(--bg);
 }
 
@@ -122,8 +125,8 @@ h1, h2, h3, h4, h5 {
    ════════════════════════════════════════════════ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
 
 /* ════════════════════════════════════════════════
    VIEW SYSTEM
@@ -229,9 +232,9 @@ h1, h2, h3, h4, h5 {
     position: relative;
     overflow: hidden;
     background:
-        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(59,130,246,0.18) 0%, transparent 70%),
-        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139,92,246,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 40% 40% at 20% 60%, rgba(16,185,129,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 80% 60% at 50% -20%, rgba(37,99,235,0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(124,58,237,0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 40% 40% at 20% 60%, rgba(5,150,105,0.06) 0%, transparent 60%),
         var(--bg);
 }
 #login-view.active,
@@ -269,14 +272,14 @@ h1, h2, h3, h4, h5 {
     z-index: 10;
     width: 100%;
     max-width: 400px;
-    background: rgba(15, 17, 26, 0.4);
+    background: rgba(255, 255, 255, 0.85);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-top: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.9);
     border-radius: var(--radius-xl);
     padding: 48px 40px;
-    box-shadow: 0 32px 64px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    box-shadow: 0 32px 64px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.9);
     animation: scaleIn 0.5s var(--ease-spring) forwards;
 }
 
@@ -304,7 +307,7 @@ h1, h2, h3, h4, h5 {
     font-weight: 800;
     letter-spacing: -1px;
     font-variation-settings: 'wght' 800;
-    background: linear-gradient(135deg, #f1f5f9 30%, #94a3b8);
+    background: linear-gradient(135deg, #0f172a 30%, #2563eb);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
