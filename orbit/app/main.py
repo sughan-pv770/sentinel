@@ -153,6 +153,14 @@ def health():
 def get_env():
     return {"env": ORBIT_ENV}
 
+@app.get("/public/users")
+def get_public_users():
+    with engine.connect() as conn:
+        from sqlalchemy import select
+        rows = conn.execute(select(users_table)).fetchall()
+        return {"users": [{"identity_id": r.identity_id, "name": r.name, "role": r.role} for r in rows]}
+
+
 
 # ════════════════════════════════════════
 # 2. PROFILE RESOURCE

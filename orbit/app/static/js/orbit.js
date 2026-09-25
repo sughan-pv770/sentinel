@@ -41,6 +41,18 @@ async function loadEnv() {
             const testPanel = document.getElementById('dev-test-panel');
             if (testPanel) testPanel.style.display = 'block';
         }
+        
+        // Fetch and populate users dropdown dynamically
+        const usersRes = await fetch(`${GATEWAY_BASE}/public/users`);
+        if (usersRes.ok) {
+            const usersData = await usersRes.json();
+            const selectEl = document.getElementById('user-select');
+            if (selectEl && usersData.users) {
+                selectEl.innerHTML = usersData.users.map(u => 
+                    `<option value="${u.identity_id}">${u.name} — ${u.role.charAt(0).toUpperCase() + u.role.slice(1)}</option>`
+                ).join('');
+            }
+        }
     } catch (e) { /* hide on error */ }
 }
 
@@ -596,6 +608,7 @@ document.getElementById('set-password-btn') && document.getElementById('set-pass
 function logout() {
     sx = null;
     _syncLogout();
+    loadEnv(); // Refresh dropdown on logout to show newly added users
 }
 document.getElementById('logout-btn').addEventListener('click', logout);
 

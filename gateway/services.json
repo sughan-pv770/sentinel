@@ -27,6 +27,7 @@
         "/users": { "sensitivity": "admin", "auth_required": true },
         "/signup": { "sensitivity": "normal", "auth_required": false },
         "/login": { "sensitivity": "normal", "auth_required": false },
+        "/public/users": { "sensitivity": "normal", "auth_required": false },
         "/env": { "sensitivity": "normal", "auth_required": false },
         "/setup_password": { "sensitivity": "normal", "auth_required": false }
       }
