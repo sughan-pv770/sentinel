@@ -127,6 +127,27 @@ async def gateway_proxy(service: str, path: str, request: Request):
     await store.add_alert(alert)
     log_decision(logger, alert)
 
+    # Collective Immune System: auto-publish threat signal on RESTRICT or REVOKE (0% PII, SHA-256 only)
+    if decision.tier in ("restrict", "revoke") and ctx.identity_id != "anonymous":
+        import hashlib
+        from datetime import datetime, timezone
+        from app.config import settings
+        id_hash = hashlib.sha256(ctx.identity_id.encode("utf-8")).hexdigest()
+        reason_cat = decision.reasons[0].code if decision.reasons else "threat_detected"
+        signal = {
+            "signal_id": f"sig_{secrets.token_hex(6)}",
+            "identity_hash": id_hash,
+            "gateway_id": settings.gateway_id,
+            "gateway_name": settings.gateway_name,
+            "verdict_tier": decision.tier.upper(),
+            "severity": "CRITICAL" if decision.tier == "revoke" else "HIGH",
+            "reason_category": reason_cat,
+            "timestamp": time.time(),
+            "iso_time": datetime.now(timezone.utc).isoformat(),
+            "is_simulated_peer": False,
+        }
+        await store.add_threat_signal(signal)
+
     if decision.tier == "revoke":
         await store.revoke_session(ctx.session_id)
         

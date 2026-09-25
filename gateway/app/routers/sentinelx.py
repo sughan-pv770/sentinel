@@ -10,7 +10,7 @@ Control-plane API (§6 of the master doc):
 """
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException
-from app.models import PolicyUpdate, SimulateRequest
+from app.models import PolicyUpdate, SimulateRequest, ThreatSignalSubmission, SimulatePeerSignalRequest
 from app.state_store import get_store
 from app.features import extract_features
 from app.decision import decide
@@ -367,3 +367,120 @@ async def reset_all_locks():
     await store.clear_all_revoked_identities()
     logger.info(f"DEV RESET: cleared {len(revoked)} identity locks")
     return {"cleared": revoked, "count": len(revoked)}
+
+
+# ════════════════════════════════════════════════════════════════
+# COLLECTIVE IMMUNE SYSTEM (Shared Threat-Signal Network)
+# ════════════════════════════════════════════════════════════════
+
+@router.post("/threat-signal")
+async def publish_threat_signal(payload: ThreatSignalSubmission):
+    """
+    PHASE 1 — Collective Immune System:
+    Publish a privacy-preserving threat signal to the shared threat mesh.
+    Contains ONLY a one-way SHA-256 hash of the identity/credential identifier,
+    the verdict tier (RESTRICT/REVOKE), severity, and origin metadata.
+    Zero raw identities, passwords, or PII are stored or transmitted.
+    """
+    store = get_store()
+    import time, secrets
+    from datetime import datetime, timezone
+
+    signal_id = f"sig_{secrets.token_hex(6)}"
+    gw_id = payload.gateway_id or settings.gateway_id
+    gw_name = payload.gateway_name or settings.gateway_name
+    tier = payload.verdict_tier.upper()
+    if tier not in ("RESTRICT", "REVOKE"):
+        raise HTTPException(status_code=400, detail="verdict_tier must be RESTRICT or REVOKE")
+
+    signal_dict = {
+        "signal_id": signal_id,
+        "identity_hash": payload.identity_hash.lower().strip(),
+        "gateway_id": gw_id,
+        "gateway_name": gw_name,
+        "verdict_tier": tier,
+        "severity": payload.severity or ("CRITICAL" if tier == "REVOKE" else "HIGH"),
+        "reason_category": payload.reason_category or "credential_compromise",
+        "timestamp": time.time(),
+        "iso_time": datetime.now(timezone.utc).isoformat(),
+        "is_simulated_peer": (gw_id != settings.gateway_id),
+    }
+
+    saved = await store.add_threat_signal(signal_dict)
+    logger.info(f"COLLECTIVE IMMUNE SIGNAL PUBLISHED: id={signal_id} gw={gw_id} hash={payload.identity_hash[:12]}... tier={tier}")
+    return {"status": "published", "signal": saved}
+
+
+@router.get("/threat-signals")
+async def list_threat_signals(limit: int = 50):
+    """List recent threat signals in the Collective Immune Network."""
+    store = get_store()
+    signals = await store.get_threat_signals(limit)
+    return {"signals": signals, "count": len(signals)}
+
+
+@router.get("/threat-mesh/stats")
+async def get_threat_mesh_stats():
+    """Get status and metrics for the Collective Immune System mesh."""
+    store = get_store()
+    return await store.get_threat_mesh_stats()
+
+
+@router.post("/threat-signals/simulate-peer")
+async def simulate_peer_threat_signal(req: SimulatePeerSignalRequest):
+    """
+    PHASE 4 / DEMO:
+    Simulates a peer gateway (e.g. Gateway Alpha from another company) catching
+    a compromised credential and broadcasting its SHA-256 hash to the mesh.
+    """
+    import hashlib, time, secrets
+    from datetime import datetime, timezone
+    store = get_store()
+
+    identity_hash = hashlib.sha256(req.identity_id.encode("utf-8")).hexdigest()
+    tier = req.verdict_tier.upper()
+    signal_id = f"sig_peer_{secrets.token_hex(4)}"
+
+    signal_dict = {
+        "signal_id": signal_id,
+        "identity_hash": identity_hash,
+        "gateway_id": req.peer_gateway_id,
+        "gateway_name": req.peer_gateway_name,
+        "verdict_tier": tier,
+        "severity": "CRITICAL" if tier == "REVOKE" else "HIGH",
+        "reason_category": req.reason_category,
+        "timestamp": time.time(),
+        "iso_time": datetime.now(timezone.utc).isoformat(),
+        "is_simulated_peer": True,
+    }
+
+    saved = await store.add_threat_signal(signal_dict)
+
+    # Audit log
+    await store.add_alert({
+        "type": "collective_threat_signal_received",
+        "identity_id": req.identity_id,
+        "gateway_name": req.peer_gateway_name,
+        "timestamp": time.time(),
+        "message": f"🌐 Collective Immune Network: Received {tier} threat signal from peer '{req.peer_gateway_name}' for credential hash {identity_hash[:8]}…",
+        "tier": "step_up",
+        "risk_score": 50,
+    })
+
+    logger.info(f"SIMULATED PEER SIGNAL: peer={req.peer_gateway_name} target={req.identity_id} hash={identity_hash[:12]}...")
+    return {
+        "status": "published",
+        "simulated": True,
+        "target_identity": req.identity_id,
+        "identity_hash": identity_hash,
+        "signal": saved
+    }
+
+
+@router.post("/threat-signals/clear")
+async def clear_threat_signals():
+    """Clear all signals in the mesh for a fresh demo."""
+    store = get_store()
+    await store.clear_threat_signals()
+    return {"status": "cleared"}
+

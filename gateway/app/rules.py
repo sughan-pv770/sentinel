@@ -39,6 +39,24 @@ async def evaluate_rules(ctx: RequestContext, fv: FeatureVector, store: BaseStor
                                message="Session token was used after being revoked"))
         return 100.0, True, reasons
 
+    # 1.5. Collective Immune System: Cross-Instance Threat Signal Match
+    import hashlib
+    identity_hash = hashlib.sha256(ctx.identity_id.encode("utf-8")).hexdigest()
+    threat_signal = await store.lookup_threat_signal(identity_hash)
+    if threat_signal:
+        from app.config import settings
+        origin_gw = threat_signal.get("gateway_id", "")
+        if origin_gw != settings.gateway_id or threat_signal.get("is_simulated_peer", False):
+            peer_name = threat_signal.get("gateway_name", "Peer Gateway")
+            verdict = threat_signal.get("verdict_tier", "REVOKE").upper()
+            reasons.append(Reason(
+                code="collective_immune_threat_match",
+                message=f"Collective Immune Network match: credential hash ({identity_hash[:8]}…) was flagged with {verdict} by external peer '{peer_name}'"
+            ))
+            added_points = 50.0 if verdict == "REVOKE" else 30.0
+            score += added_points
+            hard_trigger = True
+
     # 2. Impossible travel: geo changed AND identity has meaningful history
     profile = await store.get_profile(ctx.identity_id)
     if fv.geo_change and profile.get("total", 0) >= 3:

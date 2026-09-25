@@ -46,10 +46,11 @@ const SAFE_REASON_MAP = {
     device_and_geo_change:       'a device and location we haven\'t seen together on this account',
     identity_revoked:            'your session was revoked following a security alert',
     token_used_after_revocation: 'a session token used after it was already revoked',
-    agent_scope_deviation:       'an AI agent acting outside its declared permissions',
-    anomalous_behaviour_pattern: 'activity that deviates from your usual behaviour',
+    agent_scope_deviation:          'an AI agent acting outside its declared permissions',
+    anomalous_behaviour_pattern:    'activity that deviates from your usual behaviour',
+    collective_immune_threat_match: 'suspicious activity associated with this credential was detected across the security network',
     // ML catch-all
-    ml_anomaly:                  'a behaviour pattern our system hasn\'t seen from you before',
+    ml_anomaly:                     'a behaviour pattern our system hasn\'t seen from you before',
 };
 
 /**

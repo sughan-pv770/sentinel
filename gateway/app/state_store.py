@@ -58,6 +58,11 @@ class BaseStore:
     async def verify_otp(self, challenge_id: str, code: str) -> str:
         """Verify an OTP. Returns 'ok', 'expired', 'wrong', or 'used'."""
         ...
+    async def add_threat_signal(self, signal: dict) -> dict: ...
+    async def get_threat_signals(self, limit: int = 50) -> list: ...
+    async def lookup_threat_signal(self, identity_hash: str, max_age_hours: int = 24) -> Optional[dict]: ...
+    async def get_threat_mesh_stats(self) -> dict: ...
+    async def clear_threat_signals(self): ...
 
 
 def _default_profile_dict(role: str = "student") -> dict:
@@ -75,6 +80,7 @@ def _default_profile_dict(role: str = "student") -> dict:
 
 class InMemoryStore(BaseStore):
     def __init__(self):
+        import os, tempfile
         self._profiles: dict[str, dict] = defaultdict(lambda: _default_profile_dict("student"))
         self._users: dict[str, dict] = {}
         self._risk_state: dict[str, dict] = {}
@@ -88,8 +94,13 @@ class InMemoryStore(BaseStore):
         self._incidents_by_id: dict[str, dict] = {}
         # OTP store: challenge_id -> {code, expires_at, used}
         self._otps: dict[str, dict] = {}
+        # Collective Immune System threat mesh
+        self._threat_signals: deque = deque(maxlen=200)
+        self._threat_signals_by_hash: dict[str, dict] = {}
+        self._mesh_file = os.path.join(tempfile.gettempdir(), "sentinelx_threat_mesh.json")
         self._lock = asyncio.Lock()
         self._seed_default_profiles()
+        self._load_mesh_file()
 
     def _seed_default_profiles(self):
         defaults = [
@@ -297,6 +308,72 @@ class InMemoryStore(BaseStore):
             entry["used"] = True
             return "ok"
 
+    def _load_mesh_file(self):
+        try:
+            import os
+            if os.path.exists(self._mesh_file):
+                with open(self._mesh_file, "r", encoding="utf-8") as f:
+                    signals = json.load(f)
+                    for sig in signals:
+                        self._threat_signals_by_hash[sig["identity_hash"]] = sig
+                    self._threat_signals = deque(signals, maxlen=200)
+        except Exception:
+            pass
+
+    def _save_mesh_file(self):
+        try:
+            with open(self._mesh_file, "w", encoding="utf-8") as f:
+                json.dump(list(self._threat_signals), f)
+        except Exception:
+            pass
+
+    async def add_threat_signal(self, signal: dict) -> dict:
+        async with self._lock:
+            self._load_mesh_file()
+            # Deduplicate by identity_hash + gateway_id or signal_id
+            self._threat_signals = deque([s for s in self._threat_signals if s.get("signal_id") != signal.get("signal_id") and not (s.get("identity_hash") == signal.get("identity_hash") and s.get("gateway_id") == signal.get("gateway_id"))], maxlen=200)
+            self._threat_signals.appendleft(signal)
+            self._threat_signals_by_hash[signal["identity_hash"]] = signal
+            self._save_mesh_file()
+            return signal
+
+    async def get_threat_signals(self, limit: int = 50) -> list:
+        self._load_mesh_file()
+        return list(self._threat_signals)[:limit]
+
+    async def lookup_threat_signal(self, identity_hash: str, max_age_hours: int = 24) -> Optional[dict]:
+        self._load_mesh_file()
+        sig = self._threat_signals_by_hash.get(identity_hash)
+        if not sig:
+            return None
+        age_seconds = time.time() - float(sig.get("timestamp", 0))
+        if age_seconds <= (max_age_hours * 3600):
+            return sig
+        return None
+
+    async def get_threat_mesh_stats(self) -> dict:
+        self._load_mesh_file()
+        now = time.time()
+        active = [s for s in self._threat_signals if now - float(s.get("timestamp", 0)) <= 86400]
+        gateways = set(s.get("gateway_name", s.get("gateway_id", "peer")) for s in active)
+        gateways.add(settings.gateway_name)
+        return {
+            "mesh_status": "SYNCHRONIZED",
+            "active_threat_signals": len(active),
+            "total_signals_seen": len(self._threat_signals),
+            "connected_peer_gateways": list(gateways),
+            "peer_gateway_count": len(gateways),
+            "local_gateway_id": settings.gateway_id,
+            "local_gateway_name": settings.gateway_name,
+            "ttl_hours": settings.threat_signal_ttl_hours,
+        }
+
+    async def clear_threat_signals(self):
+        async with self._lock:
+            self._threat_signals.clear()
+            self._threat_signals_by_hash.clear()
+            self._save_mesh_file()
+
 
 class RedisStore(BaseStore):
     def __init__(self, url: str):
@@ -463,6 +540,53 @@ class RedisStore(BaseStore):
         entry["used"] = True
         await self.r.set(key, _json.dumps(entry), ex=30)  # short window to detect reuse
         return "ok"
+
+    async def add_threat_signal(self, signal: dict) -> dict:
+        # Push to threat signal list
+        await self.r.lpush("sentinelx:threat_signals", json.dumps(signal))
+        await self.r.ltrim("sentinelx:threat_signals", 0, 199)
+        # Store by hash with TTL
+        ttl_sec = int(settings.threat_signal_ttl_hours * 3600)
+        await self.r.set(f"sentinelx:threat_signal:{signal['identity_hash']}", json.dumps(signal), ex=ttl_sec)
+        await self.r.sadd("sentinelx:threat_gateways", signal.get("gateway_name", signal.get("gateway_id", "peer")))
+        return signal
+
+    async def get_threat_signals(self, limit: int = 50) -> list:
+        raw = await self.r.lrange("sentinelx:threat_signals", 0, limit - 1)
+        return [json.loads(x) for x in raw]
+
+    async def lookup_threat_signal(self, identity_hash: str, max_age_hours: int = 24) -> Optional[dict]:
+        raw = await self.r.get(f"sentinelx:threat_signal:{identity_hash}")
+        if not raw:
+            return None
+        sig = json.loads(raw)
+        age = time.time() - float(sig.get("timestamp", 0))
+        if age <= (max_age_hours * 3600):
+            return sig
+        return None
+
+    async def get_threat_mesh_stats(self) -> dict:
+        raw = await self.r.lrange("sentinelx:threat_signals", 0, 199)
+        signals = [json.loads(x) for x in raw]
+        now = time.time()
+        active = [s for s in signals if now - float(s.get("timestamp", 0)) <= 86400]
+        gateways = set(await self.r.smembers("sentinelx:threat_gateways"))
+        gateways.add(settings.gateway_name)
+        return {
+            "mesh_status": "SYNCHRONIZED",
+            "active_threat_signals": len(active),
+            "total_signals_seen": len(signals),
+            "connected_peer_gateways": list(gateways),
+            "peer_gateway_count": len(gateways),
+            "local_gateway_id": settings.gateway_id,
+            "local_gateway_name": settings.gateway_name,
+            "ttl_hours": settings.threat_signal_ttl_hours,
+        }
+
+    async def clear_threat_signals(self):
+        await self.r.delete("sentinelx:threat_signals")
+        await self.r.delete("sentinelx:threat_gateways")
+
 
 
 _store_instance: Optional[BaseStore] = None

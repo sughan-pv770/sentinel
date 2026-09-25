@@ -72,6 +72,13 @@
         </svg>
         Users
       </button>
+      <button class="tab-btn" data-tab="immune" id="tab-immune">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="7" />
+          <path d="M1 8h14M8 1a11 11 0 0 1 0 14 11 11 0 0 1 0-14" />
+        </svg>
+        🌐 Collective Immune System
+      </button>
     </nav>
 
     <div class="topbar-status">
@@ -484,6 +491,157 @@
             </tbody>
           </table>
         </div>
+      </div>
+    <!-- ══ TAB: COLLECTIVE IMMUNE SYSTEM ══ -->
+    <div class="tab-content" id="content-immune">
+      <div class="pipeline-page" style="max-width: 1200px; margin: 0 auto;">
+        
+        <!-- Header -->
+        <div class="pipeline-header" style="text-align: left; margin-bottom: 24px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px;">
+            <div>
+              <div style="display:inline-flex; align-items:center; gap:8px; padding:4px 10px; border-radius:20px; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); color:#818cf8; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px;">
+                <span style="width:6px; height:6px; border-radius:50%; background:#818cf8; display:inline-block; animation:pulse 2s infinite;"></span>
+                Privacy-Preserving Shared Threat Mesh
+              </div>
+              <h2 style="font-size:24px; font-weight:800; margin:0 0 6px 0; background:linear-gradient(135deg, #fff 30%, #a5b4fc); -webkit-background-clip:text; -webkit-text-fill-color:transparent;">🌐 The Collective Immune System</h2>
+              <p style="color:var(--text-muted); font-size:13px; margin:0; max-width:720px;">When one SentinelX gateway catches a stolen credential, every other protected app gets warned instantly via one-way SHA-256 threat signals (0% raw PII stored or shared).</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button id="btn-mesh-refresh" class="apply-btn" style="margin-top:0; padding:8px 14px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12);">↻ Refresh Mesh</button>
+              <button id="btn-mesh-clear" class="apply-btn" style="margin-top:0; padding:8px 14px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); color:#fca5a5;">Clear Signals</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metrics Row -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-bottom:24px;">
+          <div class="card" style="padding:16px 20px; background:rgba(17,24,39,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+            <div style="font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Network Status</div>
+            <div style="font-size:20px; font-weight:800; color:#34d399; display:flex; align-items:center; gap:8px;">
+              <span style="width:8px; height:8px; border-radius:50%; background:#10b981; box-shadow:0 0 8px #10b981;"></span>
+              <span id="mesh-stat-status">ACTIVE MESH</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Distributed cross-instance sync</div>
+          </div>
+
+          <div class="card" style="padding:16px 20px; background:rgba(17,24,39,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+            <div style="font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Connected Gateways</div>
+            <div style="font-size:22px; font-weight:800; color:#818cf8;" id="mesh-stat-gateways">2 Peers</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;" id="mesh-stat-gateway-names">Orbit SaaS, Nexus ERP</div>
+          </div>
+
+          <div class="card" style="padding:16px 20px; background:rgba(17,24,39,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+            <div style="font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Active Threat Signals</div>
+            <div style="font-size:22px; font-weight:800; color:#f59e0b;" id="mesh-stat-signals">0 Signals</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">24h rolling TTL window</div>
+          </div>
+
+          <div class="card" style="padding:16px 20px; background:rgba(17,24,39,0.6); border:1px solid rgba(255,255,255,0.08); border-radius:12px;">
+            <div style="font-size:11px; font-weight:600; color:var(--text-muted); text-transform:uppercase; margin-bottom:6px;">Privacy Guarantee</div>
+            <div style="font-size:18px; font-weight:800; color:#38bdf8;">100% SHA-256</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">0% plain credentials or PII</div>
+          </div>
+        </div>
+
+        <!-- Simulation + Action Grid -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; margin-bottom:24px;">
+          
+          <!-- Interactive Simulation Card -->
+          <div class="card" style="padding:22px; background:rgba(17,24,39,0.7); border:1px solid rgba(99,102,241,0.25); border-radius:14px; position:relative; overflow:hidden;">
+            <div style="position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg, #6366f1, #a855f7);"></div>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+              <span style="font-size:18px;">⚡</span>
+              <div>
+                <div style="font-size:15px; font-weight:700; color:#f8fafc;">Simulate Peer Threat Signal</div>
+                <div style="font-size:12px; color:var(--text-muted);">Simulate an external SentinelX instance flagging a compromised account</div>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:12px; margin-top:16px;">
+              <div>
+                <label style="display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">TARGET IDENTITY IN ORBIT</label>
+                <select id="peer-sim-identity" class="sandbox-select" style="width:100%; height:36px;">
+                  <option value="u_alex">Alex Rao (u_alex)</option>
+                  <option value="u_mina">Mina Okafor (u_mina)</option>
+                  <option value="u_manager1">Prof. Smith (u_manager1)</option>
+                  <option value="svc_billing">Billing Worker (svc_billing)</option>
+                </select>
+              </div>
+
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div>
+                  <label style="display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">EXTERNAL GATEWAY ORIGIN</label>
+                  <select id="peer-sim-gateway" class="sandbox-select" style="width:100%; height:36px;">
+                    <option value="Gateway Alpha (Nexus ERP)">Gateway Alpha (Nexus ERP)</option>
+                    <option value="Gateway Beta (FinTech SaaS)">Gateway Beta (FinTech SaaS)</option>
+                    <option value="Gateway Gamma (Global Auth)">Gateway Gamma (Global Auth)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="display:block; font-size:11px; font-weight:600; color:var(--text-muted); margin-bottom:4px;">VERDICT TIER</label>
+                  <select id="peer-sim-tier" class="sandbox-select" style="width:100%; height:36px;">
+                    <option value="REVOKE" selected>REVOKE (Critical Threat)</option>
+                    <option value="RESTRICT">RESTRICT (High Threat)</option>
+                  </select>
+                </div>
+              </div>
+
+              <button id="btn-fire-peer-signal" class="apply-btn" style="margin-top:8px; padding:10px 16px; background:linear-gradient(135deg, #6366f1, #8b5cf6); font-weight:700; width:100%; height:auto;">
+                Broadcast Peer Signal to Mesh ➔
+              </button>
+            </div>
+          </div>
+
+          <!-- How It Works / Value Prop Card -->
+          <div class="card" style="padding:22px; background:rgba(17,24,39,0.7); border:1px solid rgba(255,255,255,0.08); border-radius:14px;">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
+              <span style="font-size:18px;">💡</span>
+              <div>
+                <div style="font-size:15px; font-weight:700; color:#f8fafc;">Why This Solves Credential Reuse</div>
+                <div style="font-size:12px; color:var(--text-muted);">Real-world impact & cross-defense dynamics</div>
+              </div>
+            </div>
+
+            <ul style="margin:12px 0 0 0; padding-left:18px; font-size:12px; color:#cbd5e1; line-height:1.7;">
+              <li><strong>5.3 billion stolen credential pairs</strong> are circulating in 2026. Attackers reuse them across dozens of apps.</li>
+              <li><strong>Zero Isolation:</strong> When Gateway Alpha detects credential stuffing on Alex's credentials, Orbit immediately raises Alex's risk score (+50 pts).</li>
+              <li><strong>Preemptive Step-Up:</strong> Alex's very next request on Orbit is challenged with MFA before any breach occurs.</li>
+              <li><strong>Zero PII Exposure:</strong> Nodes only transmit <code style="color:#a5b4fc;">SHA-256(identity_id)</code> — completely irreversible.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- Live Threat Signal Ledger -->
+        <div class="card card-ledger" style="margin-top:0;">
+          <div class="card-header" style="padding:14px 20px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span class="card-title">📡 Live Mesh Signal Feed</span>
+              <span class="card-subtitle">Real-time incoming/outgoing threat broadcasts</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-muted);" id="mesh-feed-count">0 signals in ledger</div>
+          </div>
+          <div class="ledger-scroll" style="max-height:360px;">
+            <table class="ledger-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Origin Gateway</th>
+                  <th>SHA-256 Identity Hash (No PII)</th>
+                  <th>Verdict Tier</th>
+                  <th>Reason Category</th>
+                  <th>Network Action</th>
+                </tr>
+              </thead>
+              <tbody id="mesh-signals-body">
+                <tr>
+                  <td colspan="6" class="ledger-empty">No threat signals in mesh yet. Use the simulation tool above to broadcast a signal.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     </div>
 

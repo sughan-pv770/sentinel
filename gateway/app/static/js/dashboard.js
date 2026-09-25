@@ -598,6 +598,120 @@ function tickClock() {
   if (el) el.textContent = new Date().toUTCString().slice(0, 25) + " UTC";
 }
 
+/* ═════ COLLECTIVE IMMUNE SYSTEM ═════ */
+async function pollThreatMesh() {
+  try {
+    const [statsRes, sigsRes] = await Promise.all([
+      fetch(`${API}/sentinelx/threat-mesh/stats`),
+      fetch(`${API}/sentinelx/threat-signals?limit=30`)
+    ]);
+
+    if (statsRes.ok) {
+      const stats = await statsRes.json();
+      const stEl = $("#mesh-stat-status");
+      if (stEl) stEl.textContent = stats.mesh_status || "ACTIVE MESH";
+      const gwEl = $("#mesh-stat-gateways");
+      if (gwEl) gwEl.textContent = `${stats.peer_gateway_count || 1} Gateways`;
+      const gwNamesEl = $("#mesh-stat-gateway-names");
+      if (gwNamesEl) gwNamesEl.textContent = (stats.connected_peer_gateways || []).join(", ") || "Orbit SaaS";
+      const sigEl = $("#mesh-stat-signals");
+      if (sigEl) sigEl.textContent = `${stats.active_threat_signals || 0} Signals`;
+    }
+
+    if (sigsRes.ok) {
+      const sigsData = await sigsRes.json();
+      const signals = sigsData.signals || [];
+      const countEl = $("#mesh-feed-count");
+      if (countEl) countEl.textContent = `${signals.length} signals in ledger`;
+
+      const tbody = $("#mesh-signals-body");
+      if (tbody) {
+        if (signals.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="ledger-empty">No threat signals in mesh yet. Use the simulation tool above to broadcast a signal.</td></tr>`;
+        } else {
+          tbody.innerHTML = signals.map(s => {
+            const time = new Date(s.timestamp * 1000).toLocaleTimeString();
+            const tierCls = s.verdict_tier === 'REVOKE' ? 'revoke' : 'restrict';
+            const shortHash = s.identity_hash ? `${s.identity_hash.substring(0, 12)}…${s.identity_hash.substring(s.identity_hash.length - 8)}` : '—';
+            return `<tr>
+              <td style="font-family:var(--font-mono); color:var(--text-muted);">${time}</td>
+              <td style="font-weight:600; color:#cbd5e1;">${s.gateway_name || s.gateway_id}</td>
+              <td style="font-family:var(--font-mono); color:#38bdf8;" title="${s.identity_hash}">
+                <span style="background:rgba(56,189,248,0.1); padding:2px 6px; border-radius:4px; font-size:11px;">${shortHash}</span>
+              </td>
+              <td><span class="tier-tag ${tierCls}">${s.verdict_tier}</span></td>
+              <td style="font-family:var(--font-mono); font-size:11px; color:#94a3b8;">${s.reason_category || 'credential_compromise'}</td>
+              <td><span style="color:#34d399; font-size:11px;">✓ Synced to Mesh</span></td>
+            </tr>`;
+          }).join("");
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Threat mesh poll failed:", e);
+  }
+}
+
+function initImmuneMeshHandlers() {
+  const fireBtn = $("#btn-fire-peer-signal");
+  if (fireBtn) {
+    fireBtn.addEventListener("click", async () => {
+      fireBtn.disabled = true;
+      fireBtn.textContent = "Broadcasting to Mesh…";
+      const id = $("#peer-sim-identity")?.value || "u_alex";
+      const gwName = $("#peer-sim-gateway")?.value || "Gateway Alpha (Nexus ERP)";
+      const tier = $("#peer-sim-tier")?.value || "REVOKE";
+
+      try {
+        const res = await fetch(`${API}/sentinelx/threat-signals/simulate-peer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            identity_id: id,
+            peer_gateway_id: gwName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+            peer_gateway_name: gwName,
+            verdict_tier: tier,
+            reason_category: "credential_stuffing_detected"
+          })
+        });
+        if (res.ok) {
+          showToast(`🌐 Threat signal received from ${gwName} for ${id}`);
+          await pollThreatMesh();
+          await pollAlerts();
+          await pollRisk();
+        } else {
+          showToast("Failed to broadcast signal", true);
+        }
+      } catch (err) {
+        showToast("Error broadcasting signal", true);
+      }
+      fireBtn.disabled = false;
+      fireBtn.textContent = "Broadcast Peer Signal to Mesh ➔";
+    });
+  }
+
+  const refreshBtn = $("#btn-mesh-refresh");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", async () => {
+      await pollThreatMesh();
+      showToast("Mesh network refreshed");
+    });
+  }
+
+  const clearBtn = $("#btn-mesh-clear");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", async () => {
+      try {
+        await fetch(`${API}/sentinelx/threat-signals/clear`, { method: "POST" });
+        showToast("Threat signal mesh cleared");
+        await pollThreatMesh();
+      } catch (e) {
+        showToast("Failed to clear mesh", true);
+      }
+    });
+  }
+}
+
 /* ═════ INIT ═════ */
 tickClock();
 setInterval(tickClock, 1000);
@@ -611,15 +725,19 @@ document.head.appendChild(spinStyle);
   try {
     await loadUsers();
     await loadPolicy();
+    initImmuneMeshHandlers();
     // Initial polls
     pollRisk();
     pollAlerts();
     pollStats();
+    pollThreatMesh();
     // Recurring polls
     setInterval(pollRisk, 2500);
     setInterval(pollAlerts, 3000);
     setInterval(pollStats, 5000);
+    setInterval(pollThreatMesh, 3000);
   } catch (e) {
     console.error("Init error:", e);
   }
 })();
+

@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # Rolling baseline window
     baseline_window_requests: int = 500
 
+    # Collective Immune System (Shared Threat-Signal Network)
+    gateway_id: str = "gateway-orbit-01"
+    gateway_name: str = "Orbit SaaS Gateway"
+    collective_mesh_enabled: bool = True
+    threat_signal_ttl_hours: int = 24
+
     class Config:
         env_file = ".env"
         env_prefix = "SENTINELX_"
