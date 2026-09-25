@@ -35,7 +35,7 @@ def main():
     gate_env["SENTINELX_ORIGIN_BASE_URL"] = "http://localhost:9000"
     gate_env["SENTINELX_ORBIT_BASE_URL"] = "http://localhost:9001"
     gate_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"], 
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"], 
         cwd=gate_cwd, 
         env=gate_env
     )
@@ -45,14 +45,14 @@ def main():
     orbit_env["GATEWAY_URL"] = "http://localhost:8080"
     orbit_env["ORBIT_ENV"] = "demo"
     orbit_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9001"], 
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9001", "--reload"], 
         cwd=orbit_cwd, 
         env=orbit_env
     )
 
     print("Starting stub-service on port 9002...")
     stub_process = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9002"], 
+        [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9002", "--reload"], 
         cwd=stub_cwd,
         env=os.environ.copy()
     )
