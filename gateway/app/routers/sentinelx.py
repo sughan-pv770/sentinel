@@ -112,6 +112,7 @@ async def add_user_endpoint(user_data: dict):
     role = user_data.get("role", "student")
     network_tag = user_data.get("network_tag")
     supervisor_id = user_data.get("supervisor_id")
+    declared_scope = user_data.get("declared_scope")
 
     if not identity_id or not name:
         raise HTTPException(status_code=400, detail="identity_id and name are required")
@@ -122,7 +123,8 @@ async def add_user_endpoint(user_data: dict):
         name=name,
         role=role,
         network_tag=network_tag,
-        supervisor_id=supervisor_id
+        supervisor_id=supervisor_id,
+        declared_scope=declared_scope
     )
 
     return {"status": "created", "user": registered}

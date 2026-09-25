@@ -128,7 +128,7 @@ class InMemoryStore(BaseStore):
     async def list_users(self) -> list:
         return list(self._users.values())
 
-    async def register_user(self, identity_id: str, name: str, role: str, network_tag: str = None, supervisor_id: str = None) -> dict:
+    async def register_user(self, identity_id: str, name: str, role: str, network_tag: str = None, supervisor_id: str = None, declared_scope: list = None) -> dict:
         async with self._lock:
             user_data = {
                 "identity_id": identity_id,
@@ -136,6 +136,7 @@ class InMemoryStore(BaseStore):
                 "role": role,
                 "network_tag": network_tag,
                 "supervisor_id": supervisor_id,
+                "declared_scope": declared_scope or [],
             }
             self._users[identity_id] = user_data
             p = self._profiles[identity_id]
@@ -157,6 +158,7 @@ class InMemoryStore(BaseStore):
             "payload_sizes": list(p.get("payload_sizes", [])),
             "total": p["total"],
             "role": p.get("role", self._users.get(identity_id, {}).get("role", "student")),
+            "declared_scope": self._users.get(identity_id, {}).get("declared_scope", []),
         }
 
     async def record_request(self, identity_id: str, endpoint: str, geo: str, device: str, hour: int, ts: float, payload_size: int = 0):

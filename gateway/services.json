@@ -29,7 +29,10 @@
         "/login": { "sensitivity": "normal", "auth_required": false },
         "/public/users": { "sensitivity": "normal", "auth_required": false },
         "/env": { "sensitivity": "normal", "auth_required": false },
-        "/setup_password": { "sensitivity": "normal", "auth_required": false }
+        "/setup_password": { "sensitivity": "normal", "auth_required": false },
+        "/admin/simulate_hijack": { "sensitivity": "admin", "auth_required": true },
+        "/admin/reset_hijack": { "sensitivity": "admin", "auth_required": true },
+        "/admin/retry_sync": { "sensitivity": "admin", "auth_required": true }
       }
     },
     "stub-service": {

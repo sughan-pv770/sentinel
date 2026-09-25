@@ -570,6 +570,12 @@ function completeLogin(userId, profileData) {
         adminNav.style.display = (currentUserRole === 'admin') ? '' : 'none';
     }
 
+    // Show Simulate Hijack button only in demo/admin mode
+    const hijackBtn = document.getElementById('simulate-hijack-btn');
+    const resetBtn  = document.getElementById('reset-hijack-btn');
+    if (hijackBtn) hijackBtn.style.display = (currentUserRole === 'admin') ? '' : 'none';
+    if (resetBtn)  resetBtn.style.display  = 'none'; // hidden until hijack is triggered
+
     switchView('dashboard-view');
     document.getElementById('restriction-banner').classList.add('hidden');
     document.querySelectorAll('.action-btn').forEach(btn => btn.disabled = false);
@@ -913,7 +919,11 @@ document.getElementById('add-user-btn') && document.getElementById('add-user-btn
 
     const uid = `u_${name.toLowerCase().replace(/\s+/g, '_')}_${Date.now().toString().slice(-4)}`;
     setLoading('add-user-btn', true);
-    const res = await sx.call('/admin/add_user', 'POST', { identity_id: uid, name, role });
+    const payload = { identity_id: uid, name, role };
+    if (role === 'agent') {
+        payload.declared_scope = ['/profile', '/orders']; // Default safe scope for new agents
+    }
+    const res = await sx.call('/admin/add_user', 'POST', payload);
     setLoading('add-user-btn', false);
 
     if (res && res.ok) {
@@ -933,6 +943,35 @@ document.getElementById('add-user-btn') && document.getElementById('add-user-btn
         const errorDetail = res?.data?.detail || 'Unknown error';
         showToast(`Failed to create user: ${errorDetail}`, 'error');
         log(`Admin add user failed for ${uid}: ${errorDetail}`, 'error');
+    }
+});
+
+/* ─── Simulate Hijack / Reset Hijack ─── */
+document.getElementById('simulate-hijack-btn') && document.getElementById('simulate-hijack-btn').addEventListener('click', async () => {
+    const res = await sx.call('/admin/simulate_hijack', 'POST');
+    if (res && res.ok) {
+        showToast('⚠️ Agent hijacked! Watch for RESTRICT/REVOKE in the activity log.', 'warn');
+        log('🤖 Agent hijack TRIGGERED — SupportBot now making out-of-scope requests', 'warn');
+        const hijackBtn = document.getElementById('simulate-hijack-btn');
+        const resetBtn  = document.getElementById('reset-hijack-btn');
+        if (hijackBtn) hijackBtn.style.display = 'none';
+        if (resetBtn)  resetBtn.style.display  = '';
+    } else {
+        showToast('Failed to trigger hijack', 'error');
+    }
+});
+
+document.getElementById('reset-hijack-btn') && document.getElementById('reset-hijack-btn').addEventListener('click', async () => {
+    const res = await sx.call('/admin/reset_hijack', 'POST');
+    if (res && res.ok) {
+        showToast('✅ Agent behavior restored to normal.', 'success');
+        log('🤖 Agent hijack RESET — SupportBot back to normal operations', 'success');
+        const hijackBtn = document.getElementById('simulate-hijack-btn');
+        const resetBtn  = document.getElementById('reset-hijack-btn');
+        if (hijackBtn) hijackBtn.style.display = '';
+        if (resetBtn)  resetBtn.style.display  = 'none';
+    } else {
+        showToast('Failed to reset hijack', 'error');
     }
 });
 

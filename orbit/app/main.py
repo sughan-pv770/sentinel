@@ -47,6 +47,7 @@ def init_db():
             default_users = [
                 {"identity_id": "u_admin", "name": "Priya Nair", "role": "admin", "sync_status": "synced"},
                 {"identity_id": "u_alex", "name": "Alex Rao", "role": "student", "sync_status": "synced"},
+                {"identity_id": "agent_support", "name": "SupportBot", "role": "agent", "sync_status": "synced"},
             ]
             conn.execute(users_table.insert(), default_users)
             
@@ -55,6 +56,7 @@ async def register_users_with_gateway():
     users_to_register = [
         {"identity_id": "u_admin", "name": "Priya Nair", "role": "admin"},
         {"identity_id": "u_alex", "name": "Alex Rao", "role": "student"},
+        {"identity_id": "agent_support", "name": "SupportBot", "role": "agent", "declared_scope": ["/profile", "/orders"]},
     ]
     async with httpx.AsyncClient(timeout=3.0) as client:
         for u in users_to_register:
@@ -91,11 +93,45 @@ async def sync_users_from_gateway():
         except Exception as e:
             print(f"Failed to sync users from gateway: {e}")
 
+import asyncio
+
+# Global flag to trigger agent hijack
+_agent_hijacked = False
+
+async def simulate_agent_routine():
+    """Simulates background agent activity to establish a baseline. If hijacked, it performs out-of-scope actions."""
+    global _agent_hijacked
+    # The agent expects to normally call GET /profile and GET /orders
+    endpoints_normal = ["/profile", "/orders"]
+    # When hijacked, it calls an admin/sensitive endpoint
+    endpoints_hijacked = ["/admin/users", "/payments/transfer"]
+    
+    while True:
+        await asyncio.sleep(random.uniform(5, 10))
+        
+        endpoint = random.choice(endpoints_hijacked) if _agent_hijacked else random.choice(endpoints_normal)
+        
+        # We simulate the gateway intercepting this request by calling the gateway proxy directly, 
+        # or we can call the gateway's `/gateway/orbit{endpoint}`
+        async with httpx.AsyncClient() as client:
+            try:
+                headers = {
+                    "x-identity-id": "agent_support",
+                    "x-session-id": "sess_agent_support",
+                    "x-mock-device": "internal-server",
+                    "x-mock-geo": "IN-TN",
+                }
+                await client.get(f"{GATEWAY_URL}/gateway/orbit{endpoint}", headers=headers)
+            except Exception:
+                pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     await register_users_with_gateway()
     await sync_users_from_gateway()
+    asyncio.create_task(simulate_agent_routine())
     yield
 
 app = FastAPI(title="Orbit SaaS - Protected by SentinelX", lifespan=lifespan)
@@ -105,6 +141,7 @@ class UserCreate(BaseModel):
     identity_id: str
     name: str
     role: str
+    declared_scope: Optional[list[str]] = None
 
 class UserResponse(BaseModel):
     identity_id: str
@@ -527,6 +564,23 @@ if ORBIT_ENV == "demo":
     @app.delete("/admin/add_user")
     async def demo_stub(request: Request, current_user: dict = Depends(get_current_user_role)):
         return {"status": "demo_stub", "message": "This is a demo stub for SentinelX scoring."}
+
+
+@app.post("/admin/simulate_hijack")
+async def trigger_agent_hijack(current_user: dict = Depends(get_current_user_role)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    global _agent_hijacked
+    _agent_hijacked = True
+    return {"status": "success", "message": "Agent hijacked and will now perform out-of-scope actions."}
+
+@app.post("/admin/reset_hijack")
+async def reset_agent_hijack(current_user: dict = Depends(get_current_user_role)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+    global _agent_hijacked
+    _agent_hijacked = False
+    return {"status": "success", "message": "Agent behavior restored to normal."}
 
 # Mount Static Files (Frontend UI) — must be LAST
 current_dir = os.path.dirname(os.path.abspath(__file__))

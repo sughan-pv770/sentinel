@@ -57,6 +57,18 @@ async def evaluate_rules(ctx: RequestContext, fv: FeatureVector, store: BaseStor
     is_sensitive = sensitivity in ("sensitive", "admin")
     privileged = _is_privileged(profile, ctx)
 
+    # 3.5. Agent Scope Deviation
+    role = profile.get("role", "student")
+    if role == "agent":
+        declared_scope = profile.get("declared_scope", [])
+        if declared_scope and ctx.endpoint not in declared_scope:
+            reasons.append(Reason(
+                code="agent_scope_deviation",
+                message=f"Agent requested '{ctx.endpoint}', which is strictly outside its declared scope {declared_scope}"
+            ))
+            score += 85
+            hard_trigger = True
+
     if is_sensitive and not privileged:
         # Base: sensitive endpoint access from non-privileged role
         reasons.append(Reason(

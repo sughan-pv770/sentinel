@@ -349,6 +349,12 @@
                                     <p class="page-subtitle">Revoked identities requiring admin unlock</p>
                                 </div>
                                 <div class="page-actions">
+                                    <button id="simulate-hijack-btn" class="btn-primary action-btn" style="background:var(--accent-red);display:none;">
+                                        ⚠️ Simulate Hijack
+                                    </button>
+                                    <button id="reset-hijack-btn" class="btn-secondary action-btn" style="display:none;">
+                                        Reset Hijack
+                                    </button>
                                     <button id="refresh-locked-btn" class="btn-secondary action-btn">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 101.85-4.76L1 10"/>
@@ -456,6 +462,14 @@
                                 <span class="role-icon">🛡</span>
                                 <span class="role-name">Admin</span>
                                 <span class="role-desc">Full control</span>
+                            </span>
+                        </label>
+                        <label class="role-option">
+                            <input type="radio" name="new-user-role" value="agent">
+                            <span class="role-option-card">
+                                <span class="role-icon">🤖</span>
+                                <span class="role-name">Agent</span>
+                                <span class="role-desc">AI bot identity</span>
                             </span>
                         </label>
                     </div>
