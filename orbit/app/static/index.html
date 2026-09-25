@@ -207,6 +207,7 @@
                             <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                         </svg>
                         <span id="restriction-text">Account restricted — read-only mode active.</span>
+                        <span id="restriction-reason" style="opacity:0.8; font-style:italic;"></span>
                         <span id="restriction-countdown" class="restriction-countdown"></span>
                     </div>
                 </div>
@@ -326,6 +327,12 @@
                                     </svg>
                                     Add User
                                 </button>
+                                <button id="simulate-hijack-btn" class="btn-primary action-btn" style="background:#e53e3e;display:none;">
+                                    🤖 Simulate Hijack
+                                </button>
+                                <button id="reset-hijack-btn" class="btn-secondary action-btn" style="display:none;">
+                                    ✅ Reset Agent
+                                </button>
                             </div>
                         </div>
                         <div id="admin-data" class="admin-content stagger-1">
@@ -349,12 +356,6 @@
                                     <p class="page-subtitle">Revoked identities requiring admin unlock</p>
                                 </div>
                                 <div class="page-actions">
-                                    <button id="simulate-hijack-btn" class="btn-primary action-btn" style="background:var(--accent-red);display:none;">
-                                        ⚠️ Simulate Hijack
-                                    </button>
-                                    <button id="reset-hijack-btn" class="btn-secondary action-btn" style="display:none;">
-                                        Reset Hijack
-                                    </button>
                                     <button id="refresh-locked-btn" class="btn-secondary action-btn">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                             <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 101.85-4.76L1 10"/>
@@ -407,6 +408,7 @@
             <div class="modal-icon-wrap">🔐</div>
             <h3 class="modal-title">Security Verification</h3>
             <p class="modal-desc">SentinelX detected unusual activity. Enter your one-time code to proceed.</p>
+            <div id="mfa-why-reason" style="display:none; margin:10px 0 6px; padding:10px 14px; background:rgba(251,191,36,0.12); border-left:3px solid #f6c90e; border-radius:6px; font-size:13px; color:#fde68a; line-height:1.5;"></div>
             <div id="demo-otp-badge" class="demo-otp-badge" style="display:none;"></div>
             <input type="text" id="otp-input" class="otp-input" placeholder="• • • • • •" maxlength="6" autocomplete="one-time-code">
             <div id="otp-error" class="otp-error"></div>

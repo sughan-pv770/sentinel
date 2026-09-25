@@ -32,6 +32,42 @@ let currentUserRole = null;
 // ─── Dev spoofing ────────────────────────────────────────────────────────────
 let isDemoMode = false;
 
+/* ════════════════════════════════════════════════
+   TRANSPARENT CHALLENGE REASONING (Phase 1)
+   Safe-to-show mapping: rule codes → plain English.
+   Deliberately excludes thresholds, weights, rule IDs.
+   ════════════════════════════════════════════════ */
+const SAFE_REASON_MAP = {
+    // Rule-layer signals
+    impossible_travel:           'access from a location that doesn\'t match your usual pattern',
+    sensitive_endpoint_access:   'an action that requires extra verification for your role',
+    first_time_sensitive_access: 'a first-time request to a sensitive area of the system',
+    frequency_spike:             'an unusually high number of requests in a short time',
+    device_and_geo_change:       'a device and location we haven\'t seen together on this account',
+    identity_revoked:            'your session was revoked following a security alert',
+    token_used_after_revocation: 'a session token used after it was already revoked',
+    agent_scope_deviation:       'an AI agent acting outside its declared permissions',
+    anomalous_behaviour_pattern: 'activity that deviates from your usual behaviour',
+    // ML catch-all
+    ml_anomaly:                  'a behaviour pattern our system hasn\'t seen from you before',
+};
+
+/**
+ * Converts up to 2 raw reason objects from the gateway into a safe,
+ * human-readable sentence. Never exposes scores, thresholds, or rule names.
+ */
+function safeReasonText(reasons) {
+    if (!reasons || reasons.length === 0) return null;
+    // Pick top 2 by taking the first ones (gateway already orders by severity)
+    const phrases = reasons.slice(0, 2).map(r => {
+        // r may be a string (from older response shape) or an object with .code
+        const code = typeof r === 'string' ? r : (r.code || '');
+        return SAFE_REASON_MAP[code] || null;
+    }).filter(Boolean);
+    if (phrases.length === 0) return null;
+    return 'We\'re verifying because: ' + phrases.join(', and ') + '.';
+}
+
 async function loadEnv() {
     try {
         const res  = await fetch(`${GATEWAY_BASE}/env`);
@@ -451,6 +487,17 @@ function onStepUp(data) {
         document.getElementById('demo-otp-badge').textContent = `Demo OTP: ${challenge.demo_otp}`;
         document.getElementById('demo-otp-badge').style.display = 'block';
     }
+    // TRANSPARENT CHALLENGE REASONING — show safe phrase to the user
+    const whyEl = document.getElementById('mfa-why-reason');
+    if (whyEl) {
+        const phrase = safeReasonText(data.reasons);
+        if (phrase) {
+            whyEl.textContent = phrase;
+            whyEl.style.display = 'block';
+        } else {
+            whyEl.style.display = 'none';
+        }
+    }
     openModal('mfa-modal');
     document.getElementById('otp-input').value = '';
     document.getElementById('otp-error').textContent = '';
@@ -461,6 +508,12 @@ function onRestrict(data) {
     updateRiskGauge(data.risk_score);
     const cooldown = data.cooldown_seconds || 60;
     startRestrictCooldown(cooldown);
+    // TRANSPARENT CHALLENGE REASONING — show safe phrase in the banner
+    const reasonEl = document.getElementById('restriction-reason');
+    if (reasonEl) {
+        const phrase = safeReasonText(data.reasons);
+        reasonEl.textContent = phrase ? ` ${phrase}` : '';
+    }
     showToast(`Rate limited by SentinelX. Read-only for ${cooldown}s.`, 'error');
 }
 
@@ -469,6 +522,9 @@ function onRevoke(data) {
     updateRiskGauge(data.risk_score);
 
     const isIdentityRevoke = data.error === 'identity_revoked';
+    // TRANSPARENT CHALLENGE REASONING — build safe phrase for revoke
+    const phrase = safeReasonText(data.reasons);
+    const whyText = phrase ? ` ${phrase}` : '';
 
     // ── SAFETY CONSTRAINT: hard logout fires FIRST, synchronously ──
     const revokedUserId = sx ? sx._identityId : null;
@@ -478,11 +534,11 @@ function onRevoke(data) {
 
     if (isIdentityRevoke && revokedUserId) {
         // Identity-level revoke: show unlock screen instead of login
-        showToast('CRITICAL: Identity revoked. Contact your admin for an unlock code.', 'error');
+        showToast(`CRITICAL: Identity revoked.${whyText} Contact your admin for an unlock code.`, 'error');
         _syncLogout();
         showRevokeUnlockScreen(revokedUserId);
     } else {
-        showToast('CRITICAL: Session revoked. Logging out…', 'error');
+        showToast(`CRITICAL: Session revoked.${whyText} Logging out…`, 'error');
         _syncLogout();
     }
 
