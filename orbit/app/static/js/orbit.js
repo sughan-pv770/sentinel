@@ -1582,7 +1582,46 @@ document.getElementById('dev-reset-locks-btn') && document.getElementById('dev-r
     }
 });
 
+/* ─── Collective Immune System Mesh Broadcast ─── */
+document.getElementById('orbit-broadcast-signal-btn') && document.getElementById('orbit-broadcast-signal-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('orbit-broadcast-signal-btn');
+    const targetId = document.getElementById('orbit-peer-sim-identity')?.value || 'u_alex';
+    const gwName = document.getElementById('orbit-peer-sim-gateway')?.value || 'Gateway Alpha (Nexus ERP)';
+
+    btn.disabled = true;
+    btn.textContent = '📡 Broadcasting…';
+
+    try {
+        const res = await fetch(`${GATEWAY_BASE}/sentinelx/threat-signals/simulate-peer`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                identity_id: targetId,
+                peer_gateway_id: gwName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+                peer_gateway_name: gwName,
+                verdict_tier: 'REVOKE',
+                reason_category: 'credential_stuffing_detected'
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            const shortHash = data.identity_hash ? data.identity_hash.substring(0, 10) + '…' : '';
+            showToast(`🌐 Threat signal broadcasted from ${gwName} for ${targetId}!`, 'success');
+            log(`Collective Immune Network: Received threat signal from '${gwName}' for SHA-256(${targetId}) [${shortHash}]`, 'warn');
+        } else {
+            showToast('Failed to broadcast threat signal', 'error');
+        }
+    } catch (e) {
+        showToast('Error reaching gateway', 'error');
+    }
+
+    btn.disabled = false;
+    btn.textContent = '📡 Broadcast Signal';
+});
+
 /* ════════════════════════════════════════════════
    BOOT
    ════════════════════════════════════════════════ */
 loadEnv();
+
